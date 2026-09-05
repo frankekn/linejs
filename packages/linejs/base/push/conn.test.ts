@@ -6,13 +6,17 @@ import { Conn } from "./conn.ts";
 // op sanitizer from reporting it as a leak.
 const CONNECT_FALLBACK_MS = 350;
 
-function stubManager(fetch: () => Promise<Response>) {
+function stubManager(
+	fetch: () => Promise<Response>,
+	onLog?: () => void,
+) {
 	const logs: { type: string; data: Record<string, unknown> }[] = [];
 	const manager = {
 		client: {
 			fetch,
 			log(type: string, data: Record<string, unknown>) {
 				logs.push({ type, data });
+				onLog?.();
 			},
 		},
 		log() {},
@@ -40,6 +44,29 @@ Deno.test("Conn.new reports a transport failure instead of crashing", async () =
 	assertEquals(logs.map((entry) => entry.type), ["LegyPusherError"]);
 	assertInstanceOf(logs[0].data.error, TypeError);
 	// `reqStream` is still handed back so the caller can shut the conn down.
+	assert(conn.reqStream);
+	await conn.close();
+	await settleFallbackTimer();
+});
+
+// `log` is a user-supplied listener, so it can throw. Reporting the error
+// before resolving, and outside any guard, would let that throw reject the
+// very handler that exists to stop an unhandled rejection.
+Deno.test("Conn.new survives a log listener that throws", async () => {
+	const { manager, logs } = stubManager(
+		() => Promise.reject(new TypeError("fetch failed")),
+		() => {
+			throw new Error("log listener failed");
+		},
+	);
+	const conn = new Conn(manager as never);
+
+	await conn.new("example.invalid", 443, "/PUSH/1/subs?m=1");
+
+	assertEquals(conn.resStream, undefined);
+	// The listener was still called; only its own failure was swallowed.
+	assertEquals(logs.map((entry) => entry.type), ["LegyPusherError"]);
+	assertInstanceOf(logs[0].data.error, TypeError);
 	assert(conn.reqStream);
 	await conn.close();
 	await settleFallbackTimer();

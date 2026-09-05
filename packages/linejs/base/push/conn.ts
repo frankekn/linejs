@@ -139,8 +139,15 @@ export class Conn {
 				// and resolve: `resStream` stays unset, `read()` throws, and the
 				// reconnect loop in packages/linejs/base/polling/mod.ts retries the
 				// connection.
-				this.client.log("LegyPusherError", { error });
 				resolve();
+				try {
+					this.client.log("LegyPusherError", { error });
+				} catch {
+					// `log` is user-supplied. Letting it throw would reject this
+					// handler and put back the unhandled rejection it exists to
+					// prevent, so a broken listener is swallowed here; resolve()
+					// has already run, so the connect race settles either way.
+				}
 			});
 			setTimeout(resolve, 300);
 		});

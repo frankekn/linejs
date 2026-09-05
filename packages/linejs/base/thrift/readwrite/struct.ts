@@ -5334,7 +5334,7 @@ export function PurchaseOrder(
 		[11, 2, param.productId],
 		[11, 5, param.recipientMid],
 		[12, 11, Price(param.price)],
-		[2, 12, param.enableLinePointAutoExchange],
+		[2, 12, param.enablePointAutoExchange],
 		[12, 21, Locale(param.locale)],
 		[13, 31, [11, 11, param.presentAttributes]],
 	];
@@ -9632,6 +9632,17 @@ export function reserve_args(
 ): NestedArray {
 	return typeof param === "undefined" ? [] : [
 		[12, 1, ReserveRequest(param.request)],
+	];
+}
+export function respondE2EELoginRequest_args(
+	param?: PartialDeep<LINETypes.respondE2EELoginRequest_args> | undefined,
+): NestedArray {
+	return typeof param === "undefined" ? [] : [
+		[11, 1, param.verifier],
+		[12, 2, Pb1_C13097n4(param.publicKey)],
+		[11, 3, param.encryptedKeyChain],
+		[11, 4, param.hashKeyChain],
+		[8, 5, param.errorCode],
 	];
 }
 export function restoreE2EEKeyBackup_args(

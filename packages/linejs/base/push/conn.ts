@@ -132,7 +132,16 @@ export class Conn {
 				}
 				this.resStream = socket.body;
 				resolve();
-			})();
+			})().catch((error) => {
+				// Nothing awaits this IIFE, so a transport failure here used to
+				// surface as an unhandled rejection and take the host process down
+				// with it. Report it the way the pusher reports its other errors
+				// and resolve: `resStream` stays unset, `read()` throws, and the
+				// reconnect loop in packages/linejs/base/polling/mod.ts retries the
+				// connection.
+				this.client.log("LegyPusherError", { error });
+				resolve();
+			});
 			setTimeout(resolve, 300);
 		});
 		this.reqStream = { ...bodystream, abort };

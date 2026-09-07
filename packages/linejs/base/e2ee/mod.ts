@@ -18,6 +18,7 @@ interface GroupKey {
 
 export class E2EE {
 	readonly client: BaseClient;
+	private loginKey?: { keyId: number | string; privKey: Buffer };
 	constructor(client: BaseClient) {
 		this.client = client;
 	}
@@ -33,6 +34,13 @@ export class E2EE {
 		keyId: number | string,
 		privKey: Buffer,
 	): Promise<boolean> {
+		return (await this.checkStoredKeyAgainstServer(keyId, privKey)) === true;
+	}
+
+	private async checkStoredKeyAgainstServer(
+		keyId: number | string,
+		privKey: Buffer,
+	): Promise<boolean | undefined> {
 		try {
 			const registeredKeys = await this.client.talk.getE2EEPublicKeys();
 			for (const key of registeredKeys) {
@@ -49,7 +57,25 @@ export class E2EE {
 		} catch (_e) {
 			this.e2eeLog("verifyStoredKeyAgainstServerFailed", _e);
 		}
-		return true;
+		// An unavailable/missing server key is not evidence of a match.
+		return undefined;
+	}
+
+	/** Run only after login has installed the token. Never rotate keys on failure. */
+	public async verifyLoginKey(): Promise<void> {
+		const key = this.loginKey;
+		if (!key) return;
+		const verified = await this.checkStoredKeyAgainstServer(
+			key.keyId,
+			key.privKey,
+		);
+		if (verified === false) {
+			throw new InternalError(
+				"E2EEKeyMismatch",
+				"Login key does not match the server-registered public key; no replacement key was registered",
+			);
+		}
+		this.loginKey = undefined;
 	}
 
 	public async getE2EESelfKeyData(mid: string): Promise<LooseType> {
@@ -57,7 +83,14 @@ export class E2EE {
 			const keyData = JSON.parse(
 				await this.client.storage.get("e2eeKeys:" + mid) as string,
 			);
-			if (keyData && keyData.privKey && keyData.pubKey) return keyData;
+			if (keyData && keyData.privKey && keyData.pubKey) {
+				// A new QR login can repair an old mislabelled key without deleting storage.
+				const refreshed = keyData.keyId === undefined
+					? undefined
+					: await this.getE2EESelfKeyDataByKeyId(keyData.keyId);
+				if (refreshed?.privKey && refreshed?.pubKey) return refreshed;
+				return keyData;
+			}
 		} catch (_e) {
 			/* Do Nothing */
 		}
@@ -438,58 +471,33 @@ export class E2EE {
 			const keyId = data.keyId;
 			const publicKey = Buffer.from(data.publicKey, "base64");
 			const e2eeVersion = data.e2eeVersion;
-			const [privKey, pubKey] = this.decryptKeyChain(
+			const keys = this.decryptKeyChainEntries(
 				publicKey,
 				secret,
 				encryptedKeyChain,
 			);
-			this.e2eeLog("decodeE2EEKeyV1E2EEKeyInfo", {
-				e2eeKey: {
-					keyId,
-					privKey,
-					pubKey,
-					e2eeVersion,
-				},
-			});
-			const derivedPub = Buffer.from(
-				nacl.scalarMult.base(new Uint8Array(privKey)),
-			);
-			if (!derivedPub.equals(pubKey)) {
-				this.e2eeLog("decodeE2EEKeyV1KeyMismatch", {
-					keyId,
-					derivedPub: derivedPub.toString("base64"),
-					chainPub: pubKey.toString("base64"),
-				});
-				this.client.emit(
-					"e2ee:keyMismatch" as LooseType,
-					{ keyId, reason: "privKey does not derive to pubKey in chain" },
+			const selected = keys.find((key) => String(key.keyId) === String(keyId));
+			if (!selected) {
+				throw new InternalError(
+					"NoE2EEKey",
+					"Requested keyId is absent from the login keychain",
 				);
-				return undefined;
 			}
-			const verified = await this.verifyStoredKeyAgainstServer(
-				keyId,
-				privKey,
-			);
-			if (!verified) {
-				this.e2eeLog("decodeE2EEKeyV1ServerKeyMismatch", {
-					keyId,
-					derivedPub: derivedPub.toString("base64"),
-				});
-				this.client.emit(
-					"e2ee:keyMismatch" as LooseType,
-					{ keyId, reason: "privKey does not match server-registered pubKey" },
+			const { privKey, pubKey } = selected;
+			// Server verification is deferred until the login token is installed.
+			this.loginKey = { keyId, privKey };
+			// Keep historical generations under their own IDs, never the selected ID.
+			for (const key of keys) {
+				await this.client.storage.set(
+					"e2eeKeys:" + key.keyId,
+					JSON.stringify({
+						keyId: key.keyId,
+						privKey: key.privKey.toString("base64"),
+						pubKey: key.pubKey.toString("base64"),
+						e2eeVersion,
+					}),
 				);
-				return undefined;
 			}
-			await this.client.storage.set(
-				"e2eeKeys:" + keyId,
-				JSON.stringify({
-					keyId,
-					privKey: privKey.toString("base64"),
-					pubKey: pubKey.toString("base64"),
-					e2eeVersion,
-				}),
-			);
 			return {
 				keyId,
 				privKey,
@@ -502,14 +510,30 @@ export class E2EE {
 		publicKey: Buffer,
 		privateKey: Buffer,
 		encryptedKeyChain: Buffer,
+		keyId?: number | string,
 	): Buffer[] {
-		this.e2eeLog("decryptKeyChainKeyInfo", {
-			decryptKeyChain: {
-				publicKey: publicKey.toString("base64"),
-				privateKey: privateKey.toString("base64"),
-				encryptedKeyChain: encryptedKeyChain.toString("base64"),
-			},
-		});
+		const keys = this.decryptKeyChainEntries(
+			publicKey,
+			privateKey,
+			encryptedKeyChain,
+		);
+		const selected = keyId === undefined
+			? (keys.length === 1 ? keys[0] : undefined)
+			: keys.find((key) => String(key.keyId) === String(keyId));
+		if (!selected) {
+			throw new InternalError(
+				"NoE2EEKey",
+				"A matching keyId is required for the login keychain",
+			);
+		}
+		return [selected.privKey, selected.pubKey];
+	}
+
+	private decryptKeyChainEntries(
+		publicKey: Buffer,
+		privateKey: Buffer,
+		encryptedKeyChain: Buffer,
+	): Array<{ keyId: number; privKey: Buffer; pubKey: Buffer }> {
 		const sharedSecret = this.generateSharedSecret(privateKey, publicKey);
 		const aesKey = this.getSHA256Sum(Buffer.from(sharedSecret), "Key");
 		const aesIv = this.xor(
@@ -521,13 +545,36 @@ export class E2EE {
 			decipher.update(encryptedKeyChain),
 			decipher.final(),
 		]);
-		this.e2eeLog("decryptKeyChainBinKeyInfo", {
-			binkey: keychainData.toString("hex"),
+		const entries = this.client.thrift.readThriftStruct(keychainData)[1];
+		if (!Array.isArray(entries) || entries.length === 0) {
+			throw new InternalError(
+				"NoE2EEKey",
+				"Login keychain is empty or malformed",
+			);
+		}
+		const seen = new Set<number>();
+		return entries.map((entry) => {
+			const keyId = entry[2];
+			if (!Number.isInteger(keyId) || seen.has(keyId)) {
+				throw new InternalError(
+					"NoE2EEKey",
+					"Login keychain contains an invalid or duplicate keyId",
+				);
+			}
+			seen.add(keyId);
+			const pubKey = Buffer.from(entry[4]);
+			const privKey = Buffer.from(entry[5]);
+			if (
+				privKey.length !== 32 || pubKey.length !== 32 ||
+				!this.verifyE2EEKeyPair(privKey, pubKey)
+			) {
+				throw new InternalError(
+					"NoE2EEKey",
+					"Login keychain contains an invalid key pair",
+				);
+			}
+			return { keyId, privKey, pubKey };
 		});
-		const key = this.client.thrift.readThriftStruct(keychainData)[1];
-		const publicKeyBytes = Buffer.from(key[0][4]);
-		const privateKeyBytes = Buffer.from(key[0][5]);
-		return [privateKeyBytes, publicKeyBytes];
 	}
 
 	public encryptDeviceSecret(

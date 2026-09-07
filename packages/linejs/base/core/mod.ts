@@ -31,6 +31,7 @@ import { Thrift } from "../thrift/mod.ts";
 import { RequestClient } from "../request/mod.ts";
 import type { AuthTokenInput } from "../request/auth_token.ts";
 import { E2EE } from "../e2ee/mod.ts";
+import { createNodeFetch } from "./node_fetch.ts";
 import { LineObs } from "../obs/mod.ts";
 import { Timeline } from "../timeline/mod.ts";
 import { Polling } from "../polling/mod.ts";
@@ -97,7 +98,7 @@ export interface ClientInit {
 
 export interface Config {
 	/**
-	 * Timeout
+	 * Request timeout, also used for Node TCP/TLS connection establishment.
 	 * @default 30_000
 	 */
 	timeout: number;
@@ -134,6 +135,8 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 	readonly square: SquareService;
 	readonly talk: TalkService;
 	#customFetch?: FetchLike;
+	#nodeFetch = createNodeFetch(false);
+	#nodePushFetch = createNodeFetch(true);
 	disabled?: boolean;
 	profile?: LINETypes.Profile;
 	config: Config;
@@ -247,11 +250,18 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 		init?: RequestInit,
 	): Promise<Response> => {
 		const req = new Request(info, init);
-		const res =
-			await (this.#customFetch
-				? this.#customFetch(req)
-				: globalThis.fetch(req));
+		const fetchFn = this.#customFetch ??
+			(await this.#nodeFetch(this.config.timeout)) ?? globalThis.fetch;
+		const res = await fetchFn(req);
 		return res;
+	};
+
+	/** Node PUSH requires HTTP/2. Explicit custom transports retain control. */
+	readonly fetchPush: Fetch = async (info, init) => {
+		if (this.#customFetch) return this.fetch(info, init);
+		const fetchFn = (await this.#nodePushFetch(this.config.timeout)) ??
+			this.fetch;
+		return fetchFn(info, init);
 	};
 
 	/**

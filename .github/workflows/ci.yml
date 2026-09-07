@@ -36,6 +36,10 @@ jobs:
       # through Buffer) read env vars at module init.  Without env access
       # the test runner fails before any test body runs.
       - run: deno test -A
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/test_node_transport.mts
 
 #  format:
 #    name: "Format Check"

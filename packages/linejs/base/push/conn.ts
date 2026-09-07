@@ -7,7 +7,6 @@ import {
 	LegyH2SignOnResponseFrame,
 } from "./connData.ts";
 import type { ConnManager, ReadableStreamWriter } from "./connManager.ts";
-import { getH2EnabledFetchForNode } from "./h2_fetch.ts";
 import type { LooseType } from "@evex/loose-types";
 
 export class Conn {
@@ -107,14 +106,8 @@ export class Conn {
 		path: string,
 		headers: Record<string, string> = {},
 	) {
-		// LINE's push endpoint speaks HTTP/2 only. On Node.js the native
-		// fetch defaults to h1 and the stream silently never starts; we
-		// transparently swap in an undici-backed fetch with allowH2 just
-		// for this connection. On Deno/Bun/browser native fetch already
-		// does h2 and this lookup returns null, so the user's fetch is
-		// used as-is. See packages/linejs/base/push/h2_fetch.ts.
-		const fetchFn = (await getH2EnabledFetchForNode()) ??
-			this.client.fetch;
+		// BaseClient scopes Node's HTTP/2 dispatcher and connect timeout.
+		const fetchFn = this.client.fetchPush ?? this.client.fetch;
 		const bodystream = this.createAsyncReadableStream();
 		const abort = new AbortController();
 		await new Promise<void>((resolve) => {

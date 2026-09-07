@@ -196,6 +196,7 @@ export class Login {
 		}
 		this.client.emit("update:authtoken", authToken);
 		this.client.authToken = authToken;
+		await this.client.e2ee.verifyLoginKey();
 	}
 
 	public async requestSQR(): Promise<string> {
@@ -366,6 +367,7 @@ export class Login {
 		}
 		this.client.emit("update:authtoken", authToken);
 		this.client.authToken = authToken;
+		await this.client.e2ee.verifyLoginKey();
 	}
 
 	/**

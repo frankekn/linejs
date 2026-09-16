@@ -113,6 +113,18 @@ Deno.test("uploadMediaByE2EE — file type → no preview upload at all", async 
 	assertEquals(fake.records.length, 1);
 });
 
+Deno.test("uploadMediaByE2EE — preserves caller message metadata", async () => {
+	const { obs, fake } = makeObs();
+	await obs.uploadMediaByE2EE({
+		data: new Blob([new Uint8Array(10)]),
+		oType: "file",
+		to: "u-recipient",
+		filename: "report.pdf",
+		contentMetadata: { ENIL_REQUEST_ID: "panel-request-10" },
+	});
+	assertEquals(sentMetadata(fake).ENIL_REQUEST_ID, "panel-request-10");
+});
+
 /** contentMetadata of the one sendMessage the upload ends with. */
 function sentMetadata(
 	fake: ReturnType<typeof fakeClient>,

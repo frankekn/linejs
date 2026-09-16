@@ -340,8 +340,18 @@ export class LineObs {
 		 * other media types. The duration is caller-supplied, not inferred from data.
 		 */
 		durationMs?: number;
+		/** Extra message metadata preserved alongside OBS-managed fields. */
+		contentMetadata?: Record<string, string>;
 	}): Promise<Message> {
-		const { data, oType, to, filename, preview, durationMs } = options;
+		const {
+			data,
+			oType,
+			to,
+			filename,
+			preview,
+			durationMs,
+			contentMetadata,
+		} = options;
 		const typeSet: {
 			image: [string, 1];
 			video: [string, 2];
@@ -435,6 +445,7 @@ export class LineObs {
 			chunks,
 			contentType: contentType,
 			contentMetadata: {
+				...contentMetadata,
 				SID: obsNamespace,
 				OID: objId,
 				FILE_SIZE: edata.size.toString(),

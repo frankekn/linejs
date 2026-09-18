@@ -439,13 +439,21 @@ export class LineObs {
 				roundedDuration > 0
 				? { DURATION: roundedDuration.toString() }
 				: {};
+		const callerMetadata = { ...contentMetadata };
+		// DURATION is managed by the validated durationMs path above. A caller
+		// must not inject it for non-video media or bypass its numeric checks.
+		// Download routing is likewise derived from the encrypted object/chunks;
+		// preserving caller URLs would make receivers bypass E2EE retrieval.
+		delete callerMetadata.DURATION;
+		delete callerMetadata.DOWNLOAD_URL;
+		delete callerMetadata.PREVIEW_URL;
 
 		return await this.client.talk.sendMessage({
 			to,
 			chunks,
 			contentType: contentType,
 			contentMetadata: {
-				...contentMetadata,
+				...callerMetadata,
 				SID: obsNamespace,
 				OID: objId,
 				FILE_SIZE: edata.size.toString(),

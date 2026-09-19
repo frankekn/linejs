@@ -1,5 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import { Buffer } from "node:buffer";
+import { TalkMessage } from "../../client/features/message/talk.ts";
 import { LineObs } from "./mod.ts";
 
 /** Per-call record of (data.size, obsPath) so tests can assert which
@@ -120,9 +121,54 @@ Deno.test("uploadMediaByE2EE — preserves caller message metadata", async () =>
 		oType: "file",
 		to: "u-recipient",
 		filename: "report.pdf",
-		contentMetadata: { ENIL_REQUEST_ID: "panel-request-10" },
+		contentMetadata: {
+			ENIL_REQUEST_ID: "panel-request-10",
+			DURATION: "caller-must-not-inject",
+			DOWNLOAD_URL: "https://invalid.example/full",
+			PREVIEW_URL: "https://invalid.example/preview",
+		},
 	});
 	assertEquals(sentMetadata(fake).ENIL_REQUEST_ID, "panel-request-10");
+	assertEquals(sentMetadata(fake).DURATION, undefined);
+	assertEquals(sentMetadata(fake).DOWNLOAD_URL, undefined);
+	assertEquals(sentMetadata(fake).PREVIEW_URL, undefined);
+
+	const sent = fake.sendMessageCalls[0] as {
+		to: string;
+		chunks: Uint8Array[];
+		contentMetadata: Record<string, string>;
+	};
+	let encryptedDownloads = 0;
+	let urlFetches = 0;
+	const message = new TalkMessage({
+		client: {
+			base: {
+				fetch() {
+					urlFetches++;
+					return Promise.resolve(new Response(new Blob()));
+				},
+				obs: {
+					downloadMediaByE2EE() {
+						encryptedDownloads++;
+						return Promise.resolve(new File(["ok"], "report.pdf"));
+					},
+				},
+			},
+		} as never,
+		raw: {
+			id: "m-1",
+			to: sent.to,
+			from: "u-sender",
+			toType: "USER",
+			contentType: "FILE",
+			contentMetadata: sent.contentMetadata,
+			chunks: sent.chunks,
+		} as never,
+	});
+	await message.getData(false);
+	await message.getData(true);
+	assertEquals(urlFetches, 0);
+	assertEquals(encryptedDownloads, 2);
 });
 
 /** contentMetadata of the one sendMessage the upload ends with. */
@@ -142,6 +188,7 @@ Deno.test("uploadMediaByE2EE — a video carries its length as DURATION", async 
 		oType: "video",
 		to: "u-recipient",
 		durationMs: 4200.4,
+		contentMetadata: { DURATION: "caller-must-not-override" },
 	});
 	assertEquals(sentMetadata(fake).DURATION, "4200");
 });
@@ -152,6 +199,7 @@ Deno.test("uploadMediaByE2EE — no DURATION when omitted, none on an image", as
 		data: new Blob([new Uint8Array(1_000)]),
 		oType: "video",
 		to: "u-recipient",
+		contentMetadata: { DURATION: "caller-must-not-inject" },
 	});
 	assertEquals(sentMetadata(video.fake).DURATION, undefined);
 
@@ -161,6 +209,7 @@ Deno.test("uploadMediaByE2EE — no DURATION when omitted, none on an image", as
 		oType: "image",
 		to: "u-recipient",
 		durationMs: 4200,
+		contentMetadata: { DURATION: "caller-must-not-inject" },
 	});
 	assertEquals(sentMetadata(image.fake).DURATION, undefined);
 });
@@ -173,6 +222,7 @@ Deno.test("uploadMediaByE2EE — a non-positive or non-finite duration is droppe
 			oType: "video",
 			to: "u-recipient",
 			durationMs,
+			contentMetadata: { DURATION: "caller-must-not-inject" },
 		});
 		assertEquals(sentMetadata(fake).DURATION, undefined);
 	}

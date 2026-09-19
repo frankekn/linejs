@@ -364,7 +364,7 @@ export class TalkMessage {
 	/**
 	 * @return {Blob} message data
 	 */
-	async getData(preview?: boolean): Promise<Blob> {
+	async getData(preview?: boolean, signal?: AbortSignal): Promise<Blob> {
 		if (!hasContents.includes(this.#content.type as string)) {
 			throw new TypeError(
 				"message have no contents",
@@ -373,17 +373,18 @@ export class TalkMessage {
 		if (this.raw.contentMetadata.DOWNLOAD_URL) {
 			if (preview) {
 				const r = await this.#client.base
-					.fetch(this.raw.contentMetadata.PREVIEW_URL);
+					.fetch(this.raw.contentMetadata.PREVIEW_URL, { signal });
 				return await r.blob();
 			} else {
 				const r = await this.#client.base
-					.fetch(this.raw.contentMetadata.DOWNLOAD_URL);
+					.fetch(this.raw.contentMetadata.DOWNLOAD_URL, { signal });
 				return await r.blob();
 			}
 		}
 		if (this.raw.chunks) {
 			const file = await this.#client.base.obs.downloadMediaByE2EE(
 				this.raw,
+				signal,
 			);
 			if (!file) {
 				throw new InternalError("ObsError", "Download failed");
@@ -394,6 +395,7 @@ export class TalkMessage {
 				messageId: this.raw.id,
 				isPreview: preview,
 				isSquare: false,
+				signal,
 			});
 		}
 	}

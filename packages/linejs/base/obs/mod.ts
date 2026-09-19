@@ -108,6 +108,7 @@ export class LineObs {
 		messageId: string;
 		isPreview?: boolean;
 		isSquare?: boolean;
+		signal?: AbortSignal;
 	}): Promise<File> {
 		if (!this.client.authToken) {
 			throw new InternalError(
@@ -115,7 +116,7 @@ export class LineObs {
 				"Please call 'login()' first",
 			);
 		}
-		const { messageId, isPreview, isSquare } = {
+		const { messageId, isPreview, isSquare, signal } = {
 			isPreview: false,
 			isSquare: false,
 			...options,
@@ -123,6 +124,7 @@ export class LineObs {
 		const response = await this.client.fetch(
 			this.getMessageDataUrl(messageId, isPreview, isSquare),
 			{
+				signal,
 				headers: {
 					accept: "application/json, text/plain, */*",
 					"x-line-application": this.client.request.systemType,
@@ -137,6 +139,7 @@ export class LineObs {
 		const fileInfo = await this.getMessageObsMetadata({
 			messageId,
 			isSquare,
+			signal,
 		});
 		return new File([blob], fileInfo.name, { type: blob.type });
 	}
@@ -147,6 +150,7 @@ export class LineObs {
 	public async getMessageObsMetadata(options: {
 		messageId: string;
 		isSquare?: boolean;
+		signal?: AbortSignal;
 	}): Promise<ObsMetadata> {
 		if (!this.client.authToken) {
 			throw new InternalError(
@@ -154,13 +158,14 @@ export class LineObs {
 				"Please call 'login()' first",
 			);
 		}
-		const { messageId, isSquare } = {
+		const { messageId, isSquare, signal } = {
 			isSquare: false,
 			...options,
 		};
 		const r = await this.client.fetch(
 			this.getMessageMetadataUrl(messageId, isSquare),
 			{
+				signal,
 				headers: {
 					accept: "application/json, text/plain, */*",
 					"x-line-application": this.client.request.systemType,
@@ -305,8 +310,9 @@ export class LineObs {
 		obsPath: string;
 		oid: string;
 		addHeaders?: Record<string, string>;
+		signal?: AbortSignal;
 	}): Promise<Blob> {
-		let { obsPath, oid, addHeaders } = {
+		let { obsPath, oid, addHeaders, signal } = {
 			addHeaders: {},
 			...options,
 		};
@@ -322,7 +328,7 @@ export class LineObs {
 		const obsPathFinal = "r/" + obsPath;
 		const response = await this.client.fetch(
 			this.prefix + obsPathFinal,
-			{ method: "GET", headers },
+			{ method: "GET", headers, signal },
 		);
 		return this.#ensureOk(response, "Object download failed").blob();
 	}
@@ -467,7 +473,10 @@ export class LineObs {
 		});
 	}
 
-	public async downloadMediaByE2EE(message: Message): Promise<File | null> {
+	public async downloadMediaByE2EE(
+		message: Message,
+		signal?: AbortSignal,
+	): Promise<File | null> {
 		if (!(message.to[0] === "u" || message.to[0] === "c")) {
 			throw new InternalError("ObsError", "Invalid mid");
 		}
@@ -489,6 +498,7 @@ export class LineObs {
 			oid: contentMetadata.OID,
 			obsPath: "talk/" + contentMetadata.SID,
 			addHeaders: { "X-Talk-Meta": talkMeta },
+			signal,
 		});
 		const fileData = new File([
 			// @ts-expect-error: will fix cuz typescript version change

@@ -373,7 +373,7 @@ export class SquareMessage {
 	/**
 	 * @return {Blob} message data
 	 */
-	async getData(preview?: boolean): Promise<Blob> {
+	async getData(preview?: boolean, signal?: AbortSignal): Promise<Blob> {
 		if (!hasContents.includes(this.raw.message.contentType as string)) {
 			throw new TypeError(
 				"message have no contents",
@@ -382,11 +382,11 @@ export class SquareMessage {
 		if (this.raw.message.contentMetadata.DOWNLOAD_URL) {
 			if (preview) {
 				const r = await this.#client.base
-					.fetch(this.raw.message.contentMetadata.PREVIEW_URL);
+					.fetch(this.raw.message.contentMetadata.PREVIEW_URL, { signal });
 				return await r.blob();
 			} else {
 				const r_1 = await this.#client.base
-					.fetch(this.raw.message.contentMetadata.DOWNLOAD_URL);
+					.fetch(this.raw.message.contentMetadata.DOWNLOAD_URL, { signal });
 				return await r_1.blob();
 			}
 		}
@@ -394,6 +394,7 @@ export class SquareMessage {
 			messageId: this.raw.message.id,
 			isPreview: preview,
 			isSquare: true,
+			signal,
 		});
 	}
 

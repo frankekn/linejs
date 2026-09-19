@@ -10,6 +10,7 @@ import { ContentType } from "../thrift/readwrite/struct.ts";
 import CryptoJS from "crypto-js";
 import { gcmsiv } from "@noble/ciphers/aes.js";
 import type { LooseType } from "@evex/loose-types";
+import { abortable } from "../core/utils/abort.ts";
 
 interface GroupKey {
 	privKey: string;
@@ -78,29 +79,42 @@ export class E2EE {
 		this.loginKey = undefined;
 	}
 
-	public async getE2EESelfKeyData(mid: string): Promise<LooseType> {
+	public async getE2EESelfKeyData(
+		mid: string,
+		signal?: AbortSignal,
+	): Promise<LooseType> {
+		signal?.throwIfAborted();
 		try {
 			const keyData = JSON.parse(
-				await this.client.storage.get("e2eeKeys:" + mid) as string,
+				await abortable(
+					() => this.client.storage.get("e2eeKeys:" + mid),
+					signal,
+				) as string,
 			);
+			signal?.throwIfAborted();
 			if (keyData && keyData.privKey && keyData.pubKey) {
 				// A new QR login can repair an old mislabelled key without deleting storage.
 				const refreshed = keyData.keyId === undefined
 					? undefined
-					: await this.getE2EESelfKeyDataByKeyId(keyData.keyId);
+					: await this.getE2EESelfKeyDataByKeyId(keyData.keyId, signal);
+				signal?.throwIfAborted();
 				if (refreshed?.privKey && refreshed?.pubKey) return refreshed;
 				return keyData;
 			}
 		} catch (_e) {
+			signal?.throwIfAborted();
 			/* Do Nothing */
 		}
-		const keys = await this.client.talk.getE2EEPublicKeys();
+		const keys = await this.client.talk.getE2EEPublicKeys(signal);
+		signal?.throwIfAborted();
 		for (let i = 0; i < keys.length; i++) {
 			const key = keys[i];
 			const keyId = key.keyId ?? (key as unknown as { "2"?: string })[2];
-			const _keyData = await this.getE2EESelfKeyDataByKeyId(keyId);
+			const _keyData = await this.getE2EESelfKeyDataByKeyId(keyId, signal);
+			signal?.throwIfAborted();
 			if (_keyData) {
-				await this.saveE2EESelfKeyData(_keyData);
+				await this.saveE2EESelfKeyData(_keyData, signal);
+				signal?.throwIfAborted();
 				return _keyData;
 			}
 		}
@@ -111,12 +125,17 @@ export class E2EE {
 	}
 	public async getE2EESelfKeyDataByKeyId(
 		keyId: string | number,
+		signal?: AbortSignal,
 	): Promise<LooseType> {
 		try {
 			return JSON.parse(
-				await this.client.storage.get("e2eeKeys:" + keyId) as string,
+				await abortable(
+					() => this.client.storage.get("e2eeKeys:" + keyId),
+					signal,
+				) as string,
 			);
 		} catch (_e) {
+			signal?.throwIfAborted();
 			/* Do Nothing */
 		}
 	}
@@ -129,16 +148,22 @@ export class E2EE {
 			JSON.stringify(value),
 		);
 	}
-	public async saveE2EESelfKeyData(value: LooseType) {
-		await this.client.storage.set(
-			"e2eeKeys:" + this.client.profile?.mid,
-			JSON.stringify(value),
+	public async saveE2EESelfKeyData(value: LooseType, signal?: AbortSignal) {
+		await abortable(
+			() =>
+				this.client.storage.set(
+					"e2eeKeys:" + this.client.profile?.mid,
+					JSON.stringify(value),
+				),
+			signal,
 		);
 	}
 	public async getE2EELocalPublicKey(
 		mid: string,
 		keyId?: string | number | undefined,
+		signal?: AbortSignal,
 	): Promise<Buffer | GroupKey> {
+		signal?.throwIfAborted();
 		const toType = this.client.getToType(mid);
 
 		if (toType === LINETypes.enums.MIDType.USER) {
@@ -150,12 +175,17 @@ export class E2EE {
 			const cacheKey = `e2eePublicKeys:${mid}:${keyId}`;
 			let key: string | undefined = undefined;
 			if (keyId !== undefined) {
-				key = (await this.client.storage.get(cacheKey)) as string;
+				key = (await abortable(
+					() => this.client.storage.get(cacheKey),
+					signal,
+				)) as string;
 			}
+			signal?.throwIfAborted();
 			let receiverKeyData: LINETypes.E2EENegotiationResult;
 			if (!key) {
 				receiverKeyData = await this.client.talk.negotiateE2EEPublicKey(
 					{ mid },
+					signal,
 				);
 				const specVersion = receiverKeyData.specVersion;
 				if (specVersion === -1) {
@@ -164,11 +194,17 @@ export class E2EE {
 				const publicKey = receiverKeyData.publicKey;
 				const receiverKeyId = publicKey.keyId;
 				if (keyId === undefined || receiverKeyId == keyId) {
-					key = Buffer.from(publicKey.keyData).toString("base64");
-					await this.client.storage.set(
-						`e2eePublicKeys:${mid}:${receiverKeyId}`,
-						key,
+					const encodedKey = Buffer.from(publicKey.keyData).toString("base64");
+					key = encodedKey;
+					await abortable(
+						() =>
+							this.client.storage.set(
+								`e2eePublicKeys:${mid}:${receiverKeyId}`,
+								encodedKey,
+							),
+						signal,
 					);
+					signal?.throwIfAborted();
 				} else {
 					throw new InternalError(
 						"No E2EEKey",
@@ -195,7 +231,9 @@ export class E2EE {
 			const cached = await this.getCachedE2EEGroupKey(
 				mid,
 				requestedKeyId,
+				signal,
 			);
+			signal?.throwIfAborted();
 			if (cached) {
 				return cached;
 			}
@@ -212,7 +250,7 @@ export class E2EE {
 							keyVersion: 2,
 							chatMid: mid,
 							groupKeyId: requestedKeyId,
-						});
+						}, signal);
 				} catch (error) {
 					if (
 						error instanceof InternalError &&
@@ -235,7 +273,7 @@ export class E2EE {
 						.getLastE2EEGroupSharedKey({
 							keyVersion: 2,
 							chatMid: mid,
-						});
+						}, signal);
 				} catch (error) {
 					if (
 						error instanceof InternalError &&
@@ -243,19 +281,26 @@ export class E2EE {
 					) {
 						e2eeGroupSharedKey = await this.tryRegisterE2EEGroupKey(
 							mid,
+							signal,
 						);
 					} else {
 						throw error;
 					}
 				}
 			}
-			return await this.unwrapE2EEGroupSharedKey(mid, e2eeGroupSharedKey);
+			signal?.throwIfAborted();
+			return await this.unwrapE2EEGroupSharedKey(
+				mid,
+				e2eeGroupSharedKey,
+				signal,
+			);
 		}
 	}
 
 	private async getCachedE2EEGroupKey(
 		mid: string,
 		keyId: number | undefined,
+		signal?: AbortSignal,
 	): Promise<GroupKey | undefined> {
 		// Without a requested generation the caller wants whatever key is
 		// current, and only the server knows that.
@@ -273,7 +318,11 @@ export class E2EE {
 				`e2eeGroupKeys:${mid}`,
 			]
 		) {
-			const cached = (await this.client.storage.get(cacheKey)) as string;
+			const cached = (await abortable(
+				() => this.client.storage.get(cacheKey),
+				signal,
+			)) as string;
+			signal?.throwIfAborted();
 			if (!cached) {
 				continue;
 			}
@@ -291,7 +340,9 @@ export class E2EE {
 	private async unwrapE2EEGroupSharedKey(
 		mid: string,
 		e2eeGroupSharedKey: LINETypes.Pb1_U3,
+		signal?: AbortSignal,
 	): Promise<GroupKey> {
+		signal?.throwIfAborted();
 		const groupKeyId = e2eeGroupSharedKey.groupKeyId;
 		const creator = e2eeGroupSharedKey.creator;
 		const creatorKeyId = e2eeGroupSharedKey.creatorKeyId;
@@ -302,12 +353,15 @@ export class E2EE {
 		const selfKey = Buffer.from(
 			(await this.getE2EESelfKeyDataByKeyId(
 				receiverKeyId,
+				signal,
 			))["privKey"],
 			"base64",
 		);
+		signal?.throwIfAborted();
 		const creatorKey = await this.getE2EELocalPublicKey(
 			creator,
 			creatorKeyId,
+			signal,
 		);
 
 		const aesKey = this.generateSharedSecret(
@@ -344,26 +398,38 @@ export class E2EE {
 			keyId: groupKeyId,
 		};
 		const key = JSON.stringify(data);
-		await this.client.storage.set(
-			`e2eeGroupKeys:${mid}:${groupKeyId}`,
-			key,
+		await abortable(
+			() =>
+				this.client.storage.set(
+					`e2eeGroupKeys:${mid}:${groupKeyId}`,
+					key,
+				),
+			signal,
 		);
+		signal?.throwIfAborted();
 		// Consumers that predate the per-keyId slot only know the unsuffixed
 		// one, so keep it pointing at the key used most recently.
-		await this.client.storage.set(`e2eeGroupKeys:${mid}`, key);
+		await abortable(
+			() => this.client.storage.set(`e2eeGroupKeys:${mid}`, key),
+			signal,
+		);
+		signal?.throwIfAborted();
 		return data;
 	}
 	public async tryRegisterE2EEGroupKey(
 		chatMid: string,
+		signal?: AbortSignal,
 	): Promise<LINETypes.Pb1_U3> {
 		const e2eePublicKeys = await this.client.talk.getLastE2EEPublicKeys({
 			chatMid,
-		});
+		}, signal);
+		signal?.throwIfAborted();
 		const members: string[] = [];
 		const keyIds: number[] = [];
 		const encryptedSharedKeys: Buffer[] = [];
 		const selfKeyId = e2eePublicKeys[this.client.profile!.mid].keyId;
-		const selfKeyData = await this.getE2EESelfKeyDataByKeyId(selfKeyId);
+		const selfKeyData = await this.getE2EESelfKeyDataByKeyId(selfKeyId, signal);
+		signal?.throwIfAborted();
 		if (!selfKeyData) {
 			throw new InternalError(
 				"NoE2EEKey",
@@ -405,7 +471,7 @@ export class E2EE {
 			keyIds,
 			members,
 			encryptedSharedKeys,
-		});
+		}, signal);
 	}
 	public generateSharedSecret(
 		privateKey: Buffer,
@@ -920,7 +986,10 @@ export class E2EE {
 			privK = Buffer.from(groupK.privKey, "base64");
 			pubK = selfPubKey;
 			if (_from !== this.client.profile?.mid) {
-				pubK = await this.getE2EELocalPublicKey(_from, senderKeyId);
+				pubK = await this.getE2EELocalPublicKey(
+					_from,
+					senderKeyId,
+				);
 			}
 		}
 
@@ -1011,7 +1080,10 @@ export class E2EE {
 			privK = Buffer.from(groupK.privKey, "base64");
 			pubK = Buffer.from(selfKey.pubKey, "base64");
 			if (_from !== this.client.profile?.mid) {
-				pubK = await this.getE2EELocalPublicKey(_from, senderKeyId);
+				pubK = await this.getE2EELocalPublicKey(
+					_from,
+					senderKeyId,
+				);
 			}
 		}
 
@@ -1035,7 +1107,9 @@ export class E2EE {
 	public async decryptE2EEDataMessage(
 		messageObj: Message,
 		isSelf = false,
+		signal?: AbortSignal,
 	): Promise<Record<string, LooseType>> {
+		signal?.throwIfAborted();
 		const _from = messageObj.from;
 		const to = messageObj.to;
 		if (_from === this.client.profile?.mid) {
@@ -1060,32 +1134,46 @@ export class E2EE {
 		if (toType === LINETypes.enums.MIDType.USER || toType === "USER") {
 			// #88: pin self-key by id from envelope.
 			const selfKeyId = isSelf ? senderKeyId : receiverKeyId;
-			let selfKey = await this.getE2EESelfKeyDataByKeyId(selfKeyId);
+			let selfKey = await this.getE2EESelfKeyDataByKeyId(
+				selfKeyId,
+				signal,
+			);
 			if (!selfKey) {
 				selfKey = await this.getE2EESelfKeyData(
 					this.client.profile?.mid as string,
+					signal,
 				);
 			}
+			signal?.throwIfAborted();
 			privK = Buffer.from(selfKey.privKey, "base64");
 			pubK = await this.getE2EELocalPublicKey(
 				isSelf ? to : _from,
 				isSelf ? receiverKeyId : senderKeyId,
+				signal,
 			);
 		} else {
 			const selfKey = await this.getE2EESelfKeyData(
 				this.client.profile?.mid as string,
+				signal,
 			);
+			signal?.throwIfAborted();
 			privK = Buffer.from(selfKey.privKey, "base64");
 			const groupK = await this.getE2EELocalPublicKey(
 				to,
 				receiverKeyId,
+				signal,
 			) as GroupKey;
 			privK = Buffer.from(groupK.privKey, "base64");
 			pubK = Buffer.from(selfKey.pubKey, "base64");
 			if (_from !== this.client.profile?.mid) {
-				pubK = await this.getE2EELocalPublicKey(_from, senderKeyId);
+				pubK = await this.getE2EELocalPublicKey(
+					_from,
+					senderKeyId,
+					signal,
+				);
 			}
 		}
+		signal?.throwIfAborted();
 
 		let decrypted;
 		if (specVersion === "2") {

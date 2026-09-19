@@ -11,6 +11,7 @@ import { TalkService } from "./mod.ts";
 interface RequestCall {
 	value: unknown;
 	methodName: string;
+	args: unknown[];
 }
 
 function makeStubClient(respond: (call: number) => Promise<unknown>) {
@@ -33,13 +34,55 @@ function makeStubClient(respond: (call: number) => Promise<unknown>) {
 				},
 			},
 			request: {
-				request(value: unknown, methodName: string) {
-					calls.push({ value, methodName });
+				request(value: unknown, methodName: string, ...args: unknown[]) {
+					calls.push({ value, methodName, args });
 					return respond(calls.length);
 				},
 			},
 		},
 	};
+}
+
+Deno.test("negotiateE2EEPublicKey forwards the caller's abort signal", async () => {
+	const stub = makeStubClient(() => Promise.resolve({}));
+	Object.assign(stub.client, { config: { timeout: 1234 } });
+	const signal = new AbortController().signal;
+	await new TalkService(stub.client as never).negotiateE2EEPublicKey(
+		{ mid: "u-peer" },
+		signal,
+	);
+
+	assertEquals(stub.calls[0]?.methodName, "negotiateE2EEPublicKey");
+	assertStrictEquals(stub.calls[0]?.args[5], signal);
+});
+
+Deno.test("getE2EEPublicKeys forwards the caller's abort signal", async () => {
+	const stub = makeStubClient(() => Promise.resolve([]));
+	Object.assign(stub.client, { config: { timeout: 1234 } });
+	const signal = new AbortController().signal;
+	await new TalkService(stub.client as never).getE2EEPublicKeys(signal);
+
+	assertEquals(stub.calls[0]?.methodName, "getE2EEPublicKeys");
+	assertStrictEquals(stub.calls[0]?.args[5], signal);
+});
+
+for (
+	const method of [
+		"getE2EEGroupSharedKey",
+		"getLastE2EEGroupSharedKey",
+		"getLastE2EEPublicKeys",
+		"registerE2EEGroupKey",
+	] as const
+) {
+	Deno.test(`${method} forwards the caller's abort signal`, async () => {
+		const stub = makeStubClient(() => Promise.resolve({}));
+		Object.assign(stub.client, { config: { timeout: 1234 } });
+		const signal = new AbortController().signal;
+		await new TalkService(stub.client as never)[method]({}, signal);
+
+		assertEquals(stub.calls[0]?.methodName, method);
+		assertStrictEquals(stub.calls[0]?.args[5], signal);
+	});
 }
 
 function decodeReactRequest(value: unknown) {

@@ -7,6 +7,7 @@ import {
 import { type BaseClient, InternalError } from "../core/mod.ts";
 import { shouldUseLegyEncryptedAccess } from "./auth_token.ts";
 import { LegyEncryptedTransport } from "./legy.ts";
+import { abortable } from "../core/utils/abort.ts";
 
 const square = ["/SQ1", "/SQLV1"];
 
@@ -78,6 +79,7 @@ export class RequestClient {
 		path: string = "/S3",
 		headers: Record<string, string | undefined> = {},
 		timeout = this.client.config.timeout,
+		signal?: AbortSignal,
 	): Promise<T> {
 		if (this.client?.disabled) {
 			throw new InternalError(
@@ -95,6 +97,7 @@ export class RequestClient {
 			parse,
 			undefined,
 			timeout,
+			signal,
 		);
 		return res.data.success;
 	}
@@ -124,6 +127,7 @@ export class RequestClient {
 		parse: boolean | string = true,
 		isReRequest: boolean = false,
 		timeout: number = this.client.config.timeout,
+		signal?: AbortSignal,
 	): Promise<ParsedThrift> {
 		const protocol = Protocols[protocolType];
 
@@ -153,10 +157,14 @@ export class RequestClient {
 			body: Trequest,
 		});
 
+		const timeoutSignal = AbortSignal.timeout(timeout);
+		const requestSignal = signal
+			? AbortSignal.any([signal, timeoutSignal])
+			: timeoutSignal;
 		const request = new Request(`https://${this.endpoint}${path}`, {
 			method: overrideMethod,
 			headers,
-			signal: AbortSignal.timeout(timeout),
+			signal: requestSignal,
 			// @ts-expect-error: will fix cuz typescript version change
 			body: Trequest,
 		});
@@ -235,11 +243,15 @@ export class RequestClient {
 			res,
 		});
 
-		const isRefresh = Boolean(
-			res.data.e &&
-				res.data.e.code === "MUST_REFRESH_V3_TOKEN" &&
-				await this.client.storage.get("refreshToken"),
-		);
+		let refreshToken: unknown;
+		if (res.data.e?.code === "MUST_REFRESH_V3_TOKEN") {
+			refreshToken = await abortable(
+				() => this.client.storage.get("refreshToken"),
+				signal,
+			);
+			signal?.throwIfAborted();
+		}
+		const isRefresh = Boolean(res.data.e && refreshToken);
 
 		if (res.data.e && !isRefresh) {
 			throw new InternalError(
@@ -263,7 +275,9 @@ export class RequestClient {
 		}
 
 		if (isRefresh && !isReRequest) {
-			await this.client.auth.tryRefreshToken();
+			signal?.throwIfAborted();
+			await this.client.auth.tryRefreshToken(signal);
+			signal?.throwIfAborted();
 			return this.requestCore(
 				path,
 				value,
@@ -273,6 +287,8 @@ export class RequestClient {
 				overrideMethod,
 				parse,
 				true,
+				timeout,
+				signal,
 			);
 		}
 		return res;

@@ -6,6 +6,7 @@ import type { Message } from "@evex/linejs-types";
 import { writeStruct } from "../thrift/readwrite/write.ts";
 // @ts-types="thrift-types"
 import * as thrift from "thrift";
+import { abortable } from "../core/utils/abort.ts";
 
 export type ObjType = "image" | "gif" | "video" | "audio" | "file";
 export interface ObsMetadata {
@@ -473,8 +474,10 @@ export class LineObs {
 		if (!chunks || !chunks.length) {
 			return null;
 		}
+		signal?.throwIfAborted();
 		const { keyMaterial, fileName } = await this.client.e2ee
-			.decryptE2EEDataMessage(message);
+			.decryptE2EEDataMessage(message, false, signal);
+		signal?.throwIfAborted();
 		const talkMeta = Buffer.from(JSON.stringify({
 			message: Buffer.from(
 				writeStruct(
@@ -489,13 +492,20 @@ export class LineObs {
 			addHeaders: { "X-Talk-Meta": talkMeta },
 			signal,
 		});
-		const fileData = new File([
-			// @ts-expect-error: will fix cuz typescript version change
-			await this.client.e2ee.decryptByKeyMaterial(
-				Buffer.from(await data.arrayBuffer()),
-				keyMaterial,
-			),
-		], fileName);
+		signal?.throwIfAborted();
+		const bytes = await abortable(() => data.arrayBuffer(), signal);
+		signal?.throwIfAborted();
+		const decrypted = await abortable(
+			() =>
+				this.client.e2ee.decryptByKeyMaterial(
+					Buffer.from(bytes),
+					keyMaterial,
+				),
+			signal,
+		);
+		signal?.throwIfAborted();
+		// @ts-expect-error: will fix cuz typescript version change
+		const fileData = new File([decrypted], fileName);
 		return fileData;
 	}
 }

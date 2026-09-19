@@ -1,4 +1,4 @@
-import { assertEquals, assertRejects } from "@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "@std/assert";
 import { Buffer } from "node:buffer";
 import { InternalError } from "../core/mod.ts";
 import { LineObs } from "./mod.ts";
@@ -81,6 +81,131 @@ Deno.test("downloadMediaByE2EE — an expired object fails before the decryptor"
 
 	assertEquals(error.message, "Object download failed: HTTP 404");
 	assertEquals(decryptedSizes, []);
+});
+
+Deno.test("downloadMediaByE2EE — cancellation reaches E2EE preparation", async () => {
+	const controller = new AbortController();
+	const reason = new DOMException("caller stopped", "AbortError");
+	let receivedSignal: AbortSignal | undefined;
+	let downloads = 0;
+	const client = {
+		e2ee: {
+			decryptE2EEDataMessage(
+				_message: unknown,
+				_isSelf: boolean,
+				signal?: AbortSignal,
+			) {
+				receivedSignal = signal;
+				return new Promise((_resolve, reject) => {
+					signal?.addEventListener(
+						"abort",
+						() => reject(signal.reason),
+						{ once: true },
+					);
+				});
+			},
+		},
+	};
+	const obs = new LineObs(client as never);
+	obs.downloadObjectForService = (() => {
+		downloads++;
+		return Promise.resolve(new Blob());
+	}) as typeof obs.downloadObjectForService;
+	const pending = obs.downloadMediaByE2EE({
+		id: "1",
+		to: "u-recipient",
+		chunks: [new Uint8Array([1])],
+		contentMetadata: { OID: "OBJ-1", SID: "emi" },
+	} as never, controller.signal);
+	await Promise.resolve();
+	assertStrictEquals(receivedSignal, controller.signal);
+	controller.abort(reason);
+	try {
+		await pending;
+		throw new Error("E2EE preparation resolved after cancellation");
+	} catch (error) {
+		assertStrictEquals(error, reason);
+	}
+	assertEquals(downloads, 0);
+});
+
+Deno.test("downloadMediaByE2EE — abort rejects a hung body read", async () => {
+	const controller = new AbortController();
+	const reason = new DOMException("caller stopped", "AbortError");
+	let bodyStarted = false;
+	let decryptions = 0;
+	const client = {
+		e2ee: {
+			decryptE2EEDataMessage: () =>
+				Promise.resolve({
+					keyMaterial: Buffer.alloc(32),
+					fileName: "photo.jpg",
+				}),
+			decryptByKeyMaterial() {
+				decryptions++;
+				return Promise.resolve(Buffer.alloc(0));
+			},
+		},
+	};
+	const obs = new LineObs(client as never);
+	obs.downloadObjectForService = (() =>
+		Promise.resolve({
+			arrayBuffer() {
+				bodyStarted = true;
+				return new Promise<never>(() => {});
+			},
+		})) as never;
+	const pending = obs.downloadMediaByE2EE({
+		id: "1",
+		to: "u-recipient",
+		chunks: [new Uint8Array([1])],
+		contentMetadata: { OID: "OBJ-1", SID: "emi" },
+	} as never, controller.signal);
+	for (let i = 0; i < 10 && !bodyStarted; i++) await Promise.resolve();
+	controller.abort(reason);
+	try {
+		await pending;
+		throw new Error("body read resolved after cancellation");
+	} catch (error) {
+		assertStrictEquals(error, reason);
+	}
+	assertEquals(decryptions, 0);
+});
+
+Deno.test("downloadMediaByE2EE — abort rejects hung local decryption", async () => {
+	const controller = new AbortController();
+	const reason = new DOMException("caller stopped", "AbortError");
+	let decryptStarted = false;
+	const client = {
+		e2ee: {
+			decryptE2EEDataMessage: () =>
+				Promise.resolve({
+					keyMaterial: Buffer.alloc(32),
+					fileName: "photo.jpg",
+				}),
+			decryptByKeyMaterial() {
+				decryptStarted = true;
+				return new Promise<never>(() => {});
+			},
+		},
+	};
+	const obs = new LineObs(client as never);
+	obs.downloadObjectForService =
+		(() => Promise.resolve(new Blob([new Uint8Array([1])]))) as never;
+	const pending = obs.downloadMediaByE2EE({
+		id: "1",
+		to: "u-recipient",
+		chunks: [new Uint8Array([1])],
+		contentMetadata: { OID: "OBJ-1", SID: "emi" },
+	} as never, controller.signal);
+	for (let i = 0; i < 10 && !decryptStarted; i++) await Promise.resolve();
+	controller.abort(reason);
+	try {
+		await pending;
+		throw new Error("local decrypt resolved after cancellation");
+	} catch (error) {
+		assertStrictEquals(error, reason);
+	}
 });
 
 // An unsent message keeps its id but no object, so obs answers the data url

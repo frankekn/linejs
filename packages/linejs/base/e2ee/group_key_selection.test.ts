@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertStrictEquals } from "@std/assert";
 import { Buffer } from "node:buffer";
 import crypto from "node:crypto";
 import nacl from "tweetnacl";
@@ -28,7 +28,15 @@ function sharedKeyMaterial(keyId: number): Buffer {
 	return Buffer.alloc(32, keyId);
 }
 
-function makeFixture(opts: { served: number[]; lastKeyId: number }) {
+function makeFixture(opts: {
+	served: number[];
+	lastKeyId: number;
+	onSet?: (
+		key: string,
+		value: string,
+		commit: () => void,
+	) => Promise<void>;
+}) {
 	const store = new Map<string, string>();
 	const calls: Call[] = [];
 	const sharedKeys = new Map<number, Record<string, unknown>>();
@@ -40,7 +48,9 @@ function makeFixture(opts: { served: number[]; lastKeyId: number }) {
 				return Promise.resolve(store.get(k) ?? null);
 			},
 			set(k: string, v: string) {
-				store.set(k, v);
+				const commit = () => store.set(k, v);
+				if (opts.onSet) return opts.onSet(k, v, commit);
+				commit();
 				return Promise.resolve();
 			},
 		},
@@ -112,6 +122,171 @@ function makeFixture(opts: { served: number[]; lastKeyId: number }) {
 
 	return { e2ee, store, calls };
 }
+
+for (const mode of ["requested", "last"] as const) {
+	Deno.test(`group key — cancellation stops the ${mode} key RPC`, async () => {
+		const controller = new AbortController();
+		const reason = new DOMException("caller stopped", "AbortError");
+		let calls = 0;
+		let receivedSignal: AbortSignal | undefined;
+		const pending = (_args: unknown, signal?: AbortSignal) => {
+			calls++;
+			receivedSignal = signal;
+			return new Promise((_resolve, reject) => {
+				signal?.addEventListener(
+					"abort",
+					() => reject(signal.reason),
+					{ once: true },
+				);
+			});
+		};
+		const e2ee = new E2EE({
+			profile: { mid: "u-self" },
+			storage: {
+				get: () => Promise.resolve(null),
+				set: () => Promise.resolve(),
+			},
+			talk: {
+				getE2EEGroupSharedKey: mode === "requested"
+					? pending
+					: () => Promise.reject(new Error("unexpected requested RPC")),
+				getLastE2EEGroupSharedKey: mode === "last"
+					? pending
+					: () => Promise.reject(new Error("unexpected last RPC")),
+			},
+			getToType: () => 2,
+			log() {},
+		} as never);
+
+		const lookup = e2ee.getE2EELocalPublicKey(
+			GROUP_MID,
+			mode === "requested" ? 7 : undefined,
+			controller.signal,
+		);
+		for (let i = 0; i < 10 && calls === 0; i++) {
+			await Promise.resolve();
+		}
+		assertStrictEquals(receivedSignal, controller.signal);
+		controller.abort(reason);
+		try {
+			await lookup;
+			throw new Error("group key lookup resolved after cancellation");
+		} catch (error) {
+			assertStrictEquals(error, reason);
+		}
+		assertEquals(calls, 1);
+	});
+}
+
+Deno.test("group key — cancellation wins over a delayed cached key", async () => {
+	const controller = new AbortController();
+	const reason = new DOMException("caller stopped", "AbortError");
+	let release: ((value: string) => void) | undefined;
+	let calls = 0;
+	const e2ee = new E2EE({
+		profile: { mid: "u-self" },
+		storage: {
+			get: () => new Promise<string>((resolve) => release = resolve),
+			set: () => Promise.resolve(),
+		},
+		talk: {
+			getE2EEGroupSharedKey() {
+				calls++;
+				return Promise.reject(new Error("unexpected group-key RPC"));
+			},
+		},
+		getToType: () => 2,
+		log() {},
+	} as never);
+	const lookup = e2ee.getE2EELocalPublicKey(
+		GROUP_MID,
+		7,
+		controller.signal,
+	);
+	await Promise.resolve();
+	controller.abort(reason);
+	release?.(JSON.stringify({ privKey: "cached", keyId: 7 }));
+	try {
+		await lookup;
+		throw new Error("cached group key resolved after cancellation");
+	} catch (error) {
+		assertStrictEquals(error, reason);
+	}
+	assertEquals(calls, 0);
+});
+
+Deno.test("group key — cancellation after a generation miss skips the legacy cache", async () => {
+	const controller = new AbortController();
+	const reason = new DOMException("caller stopped", "AbortError");
+	let releaseFirst: ((value: null) => void) | undefined;
+	let reads = 0;
+	const e2ee = new E2EE({
+		profile: { mid: "u-self" },
+		storage: {
+			get() {
+				reads++;
+				if (reads === 1) {
+					return new Promise<null>((resolve) => releaseFirst = resolve);
+				}
+				return new Promise<null>(() => {});
+			},
+		},
+		getToType: () => 2,
+		log() {},
+	} as never);
+	const lookup = e2ee.getE2EELocalPublicKey(
+		GROUP_MID,
+		7,
+		controller.signal,
+	);
+	await Promise.resolve();
+	controller.abort(reason);
+	try {
+		await lookup;
+		throw new Error("group cache lookup resolved after cancellation");
+	} catch (error) {
+		assertStrictEquals(error, reason);
+	}
+	assertEquals(reads, 1, "the legacy cache read never starts after abort");
+});
+
+Deno.test("group key — cancellation between cache writes skips the legacy write", async () => {
+	const controller = new AbortController();
+	const reason = new DOMException("caller stopped", "AbortError");
+	let writes = 0;
+	let releaseFirst: (() => void) | undefined;
+	const { e2ee } = makeFixture({
+		served: [7],
+		lastKeyId: 7,
+		onSet(_key, _value, commit) {
+			writes++;
+			if (writes === 1) {
+				return new Promise<void>((resolve) => {
+					releaseFirst = () => {
+						commit();
+						resolve();
+					};
+				});
+			}
+			commit();
+			return Promise.resolve();
+		},
+	});
+	const lookup = e2ee.getE2EELocalPublicKey(
+		GROUP_MID,
+		7,
+		controller.signal,
+	);
+	for (let i = 0; i < 30 && !releaseFirst; i++) await Promise.resolve();
+	controller.abort(reason);
+	try {
+		await lookup;
+		throw new Error("group key resolved after cancellation");
+	} catch (error) {
+		assertStrictEquals(error, reason);
+	}
+	assertEquals(writes, 1, "the legacy cache write never starts after abort");
+});
 
 function expectedPrivKey(keyId: number): string {
 	return sharedKeyMaterial(keyId).toString("base64");

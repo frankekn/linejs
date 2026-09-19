@@ -5,6 +5,7 @@ import { Buffer } from "node:buffer";
 import type * as LINETypes from "@evex/linejs-types";
 import { type BaseClient, InternalError } from "../../core/mod.ts";
 import type { BaseService } from "../types.ts";
+import { abortable } from "../../core/utils/abort.ts";
 
 export class AuthService implements BaseService {
 	client: BaseClient;
@@ -18,37 +19,49 @@ export class AuthService implements BaseService {
 	/**
 	 * @description Try to refresh token.
 	 */
-	public async tryRefreshToken() {
-		const refreshToken = await this.client.storage.get("refreshToken");
+	public async tryRefreshToken(signal?: AbortSignal) {
+		const refreshToken = await abortable(
+			() => this.client.storage.get("refreshToken"),
+			signal,
+		);
 		if (typeof refreshToken === "string") {
-			const RATR = await this.refresh({ request: { refreshToken } });
-			this.client.authToken = RATR.accessToken;
-			this.client.emit("update:authtoken", RATR.accessToken);
+			const RATR = await this.refresh({ request: { refreshToken } }, signal);
 			// The server may rotate the refresh token; persisting it is
 			// required, otherwise the next refresh reuses a stale token and
-			// fails.
+			// fails. Once refresh succeeds, finish this credential transaction
+			// even if the caller cancels its wait.
 			if (RATR.refreshToken) {
-				await this.client.storage.set("refreshToken", RATR.refreshToken);
+				await this.client.storage.set(
+					"refreshToken",
+					RATR.refreshToken,
+				);
 			}
 			await this.client.storage.set(
 				"expire",
 				(RATR.tokenIssueTimeEpochSec as number) +
 				(RATR.durationUntilRefreshInSec as number) as number,
 			);
+			this.client.authToken = RATR.accessToken;
+			this.client.emit("update:authtoken", RATR.accessToken);
+			signal?.throwIfAborted();
 		} else {
 			throw new InternalError("RefreshError", "refreshToken not found");
 		}
 	}
 
 	async refresh(
-		...param: Parameters<typeof LINEStruct.refresh_args>
+		param?: Parameters<typeof LINEStruct.refresh_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.refresh_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.refresh_args(...param),
+			LINEStruct.refresh_args(param),
 			"refresh",
 			this.protocolType,
 			true,
 			"/EXT/auth/tokenrefresh/v1",
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 

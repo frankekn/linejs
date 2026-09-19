@@ -756,7 +756,7 @@ export class TalkService implements BaseService {
 			this.requestPath,
 		);
 	}
-	public async getE2EEPublicKeys(): Promise<
+	public async getE2EEPublicKeys(signal?: AbortSignal): Promise<
 		LINETypes.getE2EEPublicKeys_result["success"]
 	> {
 		return await this.client.request.request(
@@ -765,6 +765,9 @@ export class TalkService implements BaseService {
 			this.protocolType,
 			false,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
@@ -781,62 +784,82 @@ export class TalkService implements BaseService {
 	}
 
 	async registerE2EEGroupKey(
-		...param: Parameters<typeof LINEStruct.registerE2EEGroupKey_args>
+		param?: Parameters<typeof LINEStruct.registerE2EEGroupKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.registerE2EEGroupKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.registerE2EEGroupKey_args(...param),
+			LINEStruct.registerE2EEGroupKey_args(param),
 			"registerE2EEGroupKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async getE2EEGroupSharedKey(
-		...param: Parameters<typeof LINEStruct.getE2EEGroupSharedKey_args>
+		param?: Parameters<typeof LINEStruct.getE2EEGroupSharedKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.getE2EEGroupSharedKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.getE2EEGroupSharedKey_args(...param),
+			LINEStruct.getE2EEGroupSharedKey_args(param),
 			"getE2EEGroupSharedKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async getLastE2EEGroupSharedKey(
-		...param: Parameters<typeof LINEStruct.getLastE2EEGroupSharedKey_args>
+		param?: Parameters<typeof LINEStruct.getLastE2EEGroupSharedKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.getLastE2EEGroupSharedKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.getLastE2EEGroupSharedKey_args(...param),
+			LINEStruct.getLastE2EEGroupSharedKey_args(param),
 			"getLastE2EEGroupSharedKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async getLastE2EEPublicKeys(
-		...param: Parameters<typeof LINEStruct.getLastE2EEPublicKeys_args>
+		param?: Parameters<typeof LINEStruct.getLastE2EEPublicKeys_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.getLastE2EEPublicKeys_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.getLastE2EEPublicKeys_args(...param),
+			LINEStruct.getLastE2EEPublicKeys_args(param),
 			"getLastE2EEPublicKeys",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async negotiateE2EEPublicKey(
-		...param: Parameters<typeof LINEStruct.negotiateE2EEPublicKey_args>
+		param?: Parameters<typeof LINEStruct.negotiateE2EEPublicKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.negotiateE2EEPublicKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.negotiateE2EEPublicKey_args(...param),
+			LINEStruct.negotiateE2EEPublicKey_args(param),
 			"negotiateE2EEPublicKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 

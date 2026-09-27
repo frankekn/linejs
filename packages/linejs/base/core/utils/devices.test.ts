@@ -16,13 +16,13 @@ Deno.test("getDeviceDetails returns current default app profiles", () => {
 	});
 	assertEquals(getDeviceDetails("ANDROID"), {
 		device: "ANDROID",
-		appVersion: "26.6.2",
+		appVersion: "26.14.0",
 		systemName: "Android OS",
 		systemVersion: "16",
 	});
 	assertEquals(getDeviceDetails("ANDROIDSECONDARY"), {
 		device: "ANDROIDSECONDARY",
-		appVersion: "26.6.2",
+		appVersion: "26.14.0",
 		systemName: "Android OS",
 		systemVersion: "16",
 	});

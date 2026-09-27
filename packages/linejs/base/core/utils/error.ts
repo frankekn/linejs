@@ -1,10 +1,8 @@
-import type { LooseType } from "@evex/loose-types";
-
 export class InternalError extends Error {
 	constructor(
 		readonly type: string,
 		override readonly message: string,
-		readonly data: Record<string, LooseType> = {},
+		readonly data: Record<string, unknown> = {},
 	) {
 		super(message);
 		this.name = type;

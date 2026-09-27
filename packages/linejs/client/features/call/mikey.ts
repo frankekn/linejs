@@ -59,7 +59,9 @@ export interface MikeyPkeOpts {
 /** Build a complete MIKEY-PKE I_MESSAGE as a Uint8Array. */
 export async function buildMikeyPke(opts: MikeyPkeOpts): Promise<Uint8Array> {
 	if (opts.tgk.length !== 30) {
-		throw new Error("MIKEY-PKE: tgk must be 30 bytes (16-byte key + 14-byte salt)");
+		throw new Error(
+			"MIKEY-PKE: tgk must be 30 bytes (16-byte key + 14-byte salt)",
+		);
 	}
 	const envKey = opts.envelopeKey ?? randomBytes(16);
 	const rand = opts.rand ?? randomBytes(16);
@@ -89,7 +91,10 @@ export async function buildMikeyPke(opts: MikeyPkeOpts): Promise<Uint8Array> {
 	if (idi) chunks.push({ type: PT_ID, data: idi });
 	if (idr) chunks.push({ type: PT_ID, data: idr });
 	chunks.push({ type: PT_PKE, data: encodePke(pkeBody) });
-	chunks.push({ type: PT_KEMAC, data: encodeKemac(kemacEncrypted, /*macPlaceholder*/ 20) });
+	chunks.push({
+		type: PT_KEMAC,
+		data: encodeKemac(kemacEncrypted, /*macPlaceholder*/ 20),
+	});
 
 	// Stitch chunks with next-payload bytes
 	const stitched = stitchPayloads(chunks);
@@ -183,7 +188,9 @@ function buildKemacInner(tgk: Uint8Array): Uint8Array {
 }
 
 /** Walk chunks and write next_payload bytes connecting them. */
-function stitchPayloads(chunks: { type: number; data: Uint8Array }[]): Uint8Array {
+function stitchPayloads(
+	chunks: { type: number; data: Uint8Array }[],
+): Uint8Array {
 	let total = 0;
 	for (const c of chunks) total += c.data.length;
 	const out = new Uint8Array(total);
@@ -219,7 +226,10 @@ function nowNtp(): bigint {
 	return (secs << 32n) | frac;
 }
 
-async function aesCm128(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+async function aesCm128(
+	key: Uint8Array,
+	data: Uint8Array,
+): Promise<Uint8Array> {
 	const { createCipheriv } = await import("node:crypto");
 	const iv = new Uint8Array(16); // zero IV — caller responsibility to make key fresh
 	const c = createCipheriv("aes-128-ctr", Buffer.from(key), Buffer.from(iv));
@@ -227,7 +237,10 @@ async function aesCm128(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> 
 	return new Uint8Array(out.subarray(0, data.length));
 }
 
-async function hmacSha1(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+async function hmacSha1(
+	key: Uint8Array,
+	data: Uint8Array,
+): Promise<Uint8Array> {
 	const { createHmac } = await import("node:crypto");
 	const h = createHmac("sha1", Buffer.from(key));
 	h.update(Buffer.from(data));
@@ -235,7 +248,11 @@ async function hmacSha1(key: Uint8Array, data: Uint8Array): Promise<Uint8Array> 
 }
 
 /** MIKEY-1 PRF (RFC 3830 §4.1.4). Simplified: HKDF-SHA1-style key derive. */
-async function deriveMikeyKey(envKey: Uint8Array, csbId: number, label: number): Promise<Uint8Array> {
+async function deriveMikeyKey(
+	envKey: Uint8Array,
+	csbId: number,
+	label: number,
+): Promise<Uint8Array> {
 	const info = new Uint8Array(8);
 	writeU32(info, 0, csbId);
 	writeU32(info, 4, label);
@@ -244,7 +261,10 @@ async function deriveMikeyKey(envKey: Uint8Array, csbId: number, label: number):
 }
 
 /** RSA-OAEP-SHA1 encrypt with a DER-encoded SPKI public key. */
-async function rsaOaepEncrypt(spki: Uint8Array, plaintext: Uint8Array): Promise<Uint8Array> {
+async function rsaOaepEncrypt(
+	spki: Uint8Array,
+	plaintext: Uint8Array,
+): Promise<Uint8Array> {
 	const key = await crypto.subtle.importKey(
 		"spki",
 		toArrayBuffer(spki),
@@ -309,7 +329,8 @@ export function parseMikey(buf: Uint8Array): MikeyParsed {
 		const startNext = buf[off]; // first byte of payload = next_payload of THIS one
 		switch (next) {
 			case PT_T: {
-				const ts = new DataView(buf.buffer, buf.byteOffset + off + 2, 8).getBigUint64(0, false);
+				const ts = new DataView(buf.buffer, buf.byteOffset + off + 2, 8)
+					.getBigUint64(0, false);
 				out.ntpTimestamp = ts;
 				off += 10;
 				break;
@@ -349,7 +370,9 @@ export function parseMikey(buf: Uint8Array): MikeyParsed {
 	return out;
 }
 
-function readU16(b: Uint8Array, o: number): number { return (b[o] << 8) | b[o + 1]; }
+function readU16(b: Uint8Array, o: number): number {
+	return (b[o] << 8) | b[o + 1];
+}
 function readU32(b: Uint8Array, o: number): number {
 	return ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 }

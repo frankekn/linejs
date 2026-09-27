@@ -1,6 +1,6 @@
 // CallSession — control plane is real, transport is pluggable.
 import type { Client } from "../../mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "@frankekn/linejs-types";
 import type {
 	AudioDecoder,
 	AudioEncoder,

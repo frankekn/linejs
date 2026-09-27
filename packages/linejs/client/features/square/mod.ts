@@ -1,8 +1,8 @@
 import type {
 	Square as SquareRaw,
 	SquareChat as SquareChatRaw,
-} from "@evex/linejs-types";
-import type * as LINETypes from "@evex/linejs-types";
+} from "@frankekn/linejs-types";
+import type * as LINETypes from "@frankekn/linejs-types";
 import type { Client } from "../../mod.ts";
 import { continueRequest } from "../../../base/mod.ts";
 import type { ObjType } from "../../../base/obs/mod.ts";
@@ -188,12 +188,10 @@ export class SquareChat extends TypedEventEmitter<SquareChatEvents> {
 	}
 
 	async getMembers(): Promise<LINETypes.SquareMember[]> {
-		const res = await continueRequest({
-			handler: (arg) => this.#client.base.square.getSquareChatMembers(arg),
-			arg: {
-				squareChatMid: this.raw.squareChatMid,
-			},
-		});
+		const res = await continueRequest(
+			(arg) => this.#client.base.square.getSquareChatMembers(arg),
+			{ squareChatMid: this.raw.squareChatMid },
+		);
 		return res.squareChatMembers;
 	}
 	#isPolling: boolean = false;

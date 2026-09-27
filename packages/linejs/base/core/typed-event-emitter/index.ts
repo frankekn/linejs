@@ -1,6 +1,6 @@
-import type { LooseType } from "@evex/loose-types";
-
-type RecordEvent = Record<string, (...args: LooseType[]) => LooseType>;
+// never-params + unknown-return is the supertype of every listener
+// signature, so any concrete event map still extends it.
+type RecordEvent = Record<string, (...args: never[]) => unknown>;
 
 export class TypedEventEmitter<
 	T extends RecordEvent,
@@ -14,8 +14,8 @@ export class TypedEventEmitter<
 		}
 
 		for (const listener of listeners) {
-			if(!(listener instanceof Function)){
-				throw new TypeError("listeners is not function")
+			if (!(listener instanceof Function)) {
+				throw new TypeError("listeners is not function");
 			}
 			this.listeners.get(event)?.push(listener);
 		}

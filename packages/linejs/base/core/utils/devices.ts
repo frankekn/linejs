@@ -53,12 +53,12 @@ export function getDeviceDetails(
 			break;
 		*/
 		case "ANDROID":
-			appVersion = version || "26.6.2";
+			appVersion = version || "26.14.0";
 			systemName = "Android OS";
 			systemVersion = "16";
 			break;
 		case "ANDROIDSECONDARY":
-			appVersion = version || "26.6.2";
+			appVersion = version || "26.14.0";
 			systemName = "Android OS";
 			systemVersion = "16";
 			break;

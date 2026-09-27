@@ -1,11 +1,10 @@
 import { type BaseClient, InternalError } from "../../core/mod.ts";
 import type { ProtocolKey } from "../../thrift/mod.ts";
 import type { BaseService } from "../types.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "@frankekn/linejs-types";
 import { LINEStruct } from "../../thrift/mod.ts";
 import type { Buffer } from "node:buffer";
 import { ContentType } from "../../thrift/readwrite/struct.ts";
-import type { LooseType } from "@evex/loose-types";
 import {
 	COMPACT_E2EE_MESSAGE_ENDPOINT,
 	COMPACT_PLAIN_MESSAGE_ENDPOINT,
@@ -172,7 +171,10 @@ export class TalkService implements BaseService {
 		} catch (error) {
 			if (
 				error instanceof InternalError &&
-				(error.data?.code.toString()).includes("E2EE") &&
+				// `data` defaults to `{}` and only some throw sites fill in a
+				// code, so reading `.toString()` off it threw a TypeError from
+				// inside this handler and buried the error it was inspecting.
+				String(error.data?.code ?? "").includes("E2EE") &&
 				typeof e2ee === "undefined"
 			) {
 				options.e2ee = true;
@@ -753,7 +755,7 @@ export class TalkService implements BaseService {
 			this.requestPath,
 		);
 	}
-	public async getE2EEPublicKeys(): Promise<
+	public async getE2EEPublicKeys(signal?: AbortSignal): Promise<
 		LINETypes.getE2EEPublicKeys_result["success"]
 	> {
 		return await this.client.request.request(
@@ -762,6 +764,9 @@ export class TalkService implements BaseService {
 			this.protocolType,
 			false,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
@@ -778,73 +783,107 @@ export class TalkService implements BaseService {
 	}
 
 	async registerE2EEGroupKey(
-		...param: Parameters<typeof LINEStruct.registerE2EEGroupKey_args>
+		param?: Parameters<typeof LINEStruct.registerE2EEGroupKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.registerE2EEGroupKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.registerE2EEGroupKey_args(...param),
+			LINEStruct.registerE2EEGroupKey_args(param),
 			"registerE2EEGroupKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async getE2EEGroupSharedKey(
-		...param: Parameters<typeof LINEStruct.getE2EEGroupSharedKey_args>
+		param?: Parameters<typeof LINEStruct.getE2EEGroupSharedKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.getE2EEGroupSharedKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.getE2EEGroupSharedKey_args(...param),
+			LINEStruct.getE2EEGroupSharedKey_args(param),
 			"getE2EEGroupSharedKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async getLastE2EEGroupSharedKey(
-		...param: Parameters<typeof LINEStruct.getLastE2EEGroupSharedKey_args>
+		param?: Parameters<typeof LINEStruct.getLastE2EEGroupSharedKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.getLastE2EEGroupSharedKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.getLastE2EEGroupSharedKey_args(...param),
+			LINEStruct.getLastE2EEGroupSharedKey_args(param),
 			"getLastE2EEGroupSharedKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async getLastE2EEPublicKeys(
-		...param: Parameters<typeof LINEStruct.getLastE2EEPublicKeys_args>
+		param?: Parameters<typeof LINEStruct.getLastE2EEPublicKeys_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.getLastE2EEPublicKeys_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.getLastE2EEPublicKeys_args(...param),
+			LINEStruct.getLastE2EEPublicKeys_args(param),
 			"getLastE2EEPublicKeys",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
 	async negotiateE2EEPublicKey(
-		...param: Parameters<typeof LINEStruct.negotiateE2EEPublicKey_args>
+		param?: Parameters<typeof LINEStruct.negotiateE2EEPublicKey_args>[0],
+		signal?: AbortSignal,
 	): Promise<LINETypes.negotiateE2EEPublicKey_result["success"]> {
 		return await this.client.request.request(
-			LINEStruct.negotiateE2EEPublicKey_args(...param),
+			LINEStruct.negotiateE2EEPublicKey_args(param),
 			"negotiateE2EEPublicKey",
 			this.protocolType,
 			true,
 			this.requestPath,
+			{},
+			this.client.config.timeout,
+			signal,
 		);
 	}
 
+	/**
+	 * Reacts to a message.
+	 *
+	 * @param options - The options for the reaction.
+	 * @param options.id - The id of the message to react to.
+	 * @param options.reaction - The reaction to send.
+	 * @param options.reqSeq - The request sequence number. Defaults to the
+	 * client's next talk sequence number.
+	 */
 	async react(options: {
 		id: bigint | number;
 		reaction: LINETypes.MessageReactionType;
+		reqSeq?: number;
 	}): Promise<void> {
+		// Every other talk request carries the client's monotonic sequence
+		// number; a hardcoded 0 made every reaction of a session look to the
+		// server like the same request being retried.
+		const reqSeq = options.reqSeq ?? await this.client.getReqseq();
 		return await this.client.request.request(
 			LINEStruct.react_args({
 				reactRequest: {
-					reqSeq: 0,
+					reqSeq,
 					messageId: options.id,
 					reactionType: {
 						predefinedReactionType: options.reaction,
@@ -1700,7 +1739,7 @@ export class TalkService implements BaseService {
 		},
 	): Promise<LINETypes.Contact[]> {
 		const { mids } = { ...options };
-		const response = (await this.client.request.request<LooseType[]>(
+		const response = (await this.client.request.request<unknown[]>(
 			[[15, 2, [11, mids]]],
 			"getContacts",
 			this.protocolType,

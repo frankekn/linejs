@@ -2,10 +2,11 @@ import { Buffer } from "node:buffer";
 import { type BaseClient, InternalError } from "../core/mod.ts";
 import { MimeType } from "./mime.ts";
 import crypto from "node:crypto";
-import type { Message } from "@evex/linejs-types";
+import type { Message } from "@frankekn/linejs-types";
 import { writeStruct } from "../thrift/readwrite/write.ts";
 // @ts-types="thrift-types"
 import * as thrift from "thrift";
+import { abortable } from "../core/utils/abort.ts";
 
 export type ObjType = "image" | "gif" | "video" | "audio" | "file";
 export interface ObsMetadata {
@@ -53,6 +54,25 @@ export class LineObs {
 	}
 
 	/**
+	 * Obs answers a failed download with a plain HTTP error status and an empty,
+	 * HTML or JSON error body. Passing that body on as if it were the object
+	 * turns an expired (FILE_EXPIRE_TIMESTAMP) or unsent object into an
+	 * unrelated "encrypted data too short" / "Unexpected end of JSON input", so
+	 * every download stops at the status instead. The body is left out of the
+	 * message on purpose: obs error pages embed signed urls.
+	 */
+	#ensureOk(response: Response, what: string): Response {
+		if (!response.ok) {
+			throw new InternalError(
+				"ObsError",
+				`${what}: HTTP ${response.status}`,
+				{ status: response.status },
+			);
+		}
+		return response;
+	}
+
+	/**
 	 * Gets a message image URI by appending the given message ID to the prefixSticker
 	 * @param {string} [messageId] - The message ID to use in the URLSticker
 	 * @param {boolean} [isPreview=false] - Whether to append '/preview' to the URL.
@@ -89,6 +109,7 @@ export class LineObs {
 		messageId: string;
 		isPreview?: boolean;
 		isSquare?: boolean;
+		signal?: AbortSignal;
 	}): Promise<File> {
 		if (!this.client.authToken) {
 			throw new InternalError(
@@ -96,24 +117,30 @@ export class LineObs {
 				"Please call 'login()' first",
 			);
 		}
-		const { messageId, isPreview, isSquare } = {
+		const { messageId, isPreview, isSquare, signal } = {
 			isPreview: false,
 			isSquare: false,
 			...options,
 		};
-		const blob = await (await this.client.fetch(
+		const response = await this.client.fetch(
 			this.getMessageDataUrl(messageId, isPreview, isSquare),
 			{
+				signal,
 				headers: {
 					accept: "application/json, text/plain, */*",
 					"x-line-application": this.client.request.systemType,
 					"x-Line-access": this.client.authToken,
 				},
 			},
-		)).blob();
+		);
+		const blob = await this.#ensureOk(
+			response,
+			"Message data download failed",
+		).blob();
 		const fileInfo = await this.getMessageObsMetadata({
 			messageId,
 			isSquare,
+			signal,
 		});
 		return new File([blob], fileInfo.name, { type: blob.type });
 	}
@@ -124,6 +151,7 @@ export class LineObs {
 	public async getMessageObsMetadata(options: {
 		messageId: string;
 		isSquare?: boolean;
+		signal?: AbortSignal;
 	}): Promise<ObsMetadata> {
 		if (!this.client.authToken) {
 			throw new InternalError(
@@ -131,13 +159,14 @@ export class LineObs {
 				"Please call 'login()' first",
 			);
 		}
-		const { messageId, isSquare } = {
+		const { messageId, isSquare, signal } = {
 			isSquare: false,
 			...options,
 		};
 		const r = await this.client.fetch(
 			this.getMessageMetadataUrl(messageId, isSquare),
 			{
+				signal,
 				headers: {
 					accept: "application/json, text/plain, */*",
 					"x-line-application": this.client.request.systemType,
@@ -145,7 +174,7 @@ export class LineObs {
 				},
 			},
 		);
-		return r.json();
+		return this.#ensureOk(r, "Message metadata request failed").json();
 	}
 
 	/**
@@ -247,7 +276,7 @@ export class LineObs {
 		};
 
 		params = { ...baseParams, ...(params || {}) };
-		
+
 		if (!data || data.size === 0) {
 			throw new InternalError("ObsError", "No data to send.");
 		}
@@ -282,8 +311,9 @@ export class LineObs {
 		obsPath: string;
 		oid: string;
 		addHeaders?: Record<string, string>;
+		signal?: AbortSignal;
 	}): Promise<Blob> {
-		let { obsPath, oid, addHeaders } = {
+		let { obsPath, oid, addHeaders, signal } = {
 			addHeaders: {},
 			...options,
 		};
@@ -299,9 +329,9 @@ export class LineObs {
 		const obsPathFinal = "r/" + obsPath;
 		const response = await this.client.fetch(
 			this.prefix + obsPathFinal,
-			{ method: "GET", headers },
+			{ method: "GET", headers, signal },
 		);
-		return response.blob();
+		return this.#ensureOk(response, "Object download failed").blob();
 	}
 
 	public async uploadMediaByE2EE(options: {
@@ -311,8 +341,24 @@ export class LineObs {
 		filename?: string;
 		/** Optional thumbnail; encrypted with the same keyMaterial. #103. */
 		preview?: Blob;
+		/**
+		 * Clip length in milliseconds, rounded to an integer for video `DURATION`.
+		 * Omitted unless the rounded value is a positive safe integer. Ignored for
+		 * other media types. The duration is caller-supplied, not inferred from data.
+		 */
+		durationMs?: number;
+		/** Extra message metadata preserved alongside OBS-managed fields. */
+		contentMetadata?: Record<string, string>;
 	}): Promise<Message> {
-		const { data, oType, to, filename, preview } = options;
+		const {
+			data,
+			oType,
+			to,
+			filename,
+			preview,
+			durationMs,
+			contentMetadata,
+		} = options;
 		const typeSet: {
 			image: [string, 1];
 			video: [string, 2];
@@ -389,11 +435,32 @@ export class LineObs {
 			contentType,
 		);
 
+		// obs only ever sees the encrypted blob here, so it cannot read the length
+		// out of the container the way it does for a plain upload; without this
+		// LINE clients render the video as a 0:00 clip.
+		const roundedDuration = typeof durationMs === "number"
+			? Math.round(durationMs)
+			: NaN;
+		const durationMetadata: Record<string, string> =
+			oType === "video" && Number.isSafeInteger(roundedDuration) &&
+				roundedDuration > 0
+				? { DURATION: roundedDuration.toString() }
+				: {};
+		const callerMetadata = { ...contentMetadata };
+		// DURATION is managed by the validated durationMs path above. A caller
+		// must not inject it for non-video media or bypass its numeric checks.
+		// Download routing is likewise derived from the encrypted object/chunks;
+		// preserving caller URLs would make receivers bypass E2EE retrieval.
+		delete callerMetadata.DURATION;
+		delete callerMetadata.DOWNLOAD_URL;
+		delete callerMetadata.PREVIEW_URL;
+
 		return await this.client.talk.sendMessage({
 			to,
 			chunks,
 			contentType: contentType,
 			contentMetadata: {
+				...callerMetadata,
 				SID: obsNamespace,
 				OID: objId,
 				FILE_SIZE: edata.size.toString(),
@@ -410,11 +477,15 @@ export class LineObs {
 						),
 					}
 					: {},
+				...durationMetadata,
 			},
 		});
 	}
 
-	public async downloadMediaByE2EE(message: Message): Promise<File | null> {
+	public async downloadMediaByE2EE(
+		message: Message,
+		signal?: AbortSignal,
+	): Promise<File | null> {
 		if (!(message.to[0] === "u" || message.to[0] === "c")) {
 			throw new InternalError("ObsError", "Invalid mid");
 		}
@@ -422,8 +493,19 @@ export class LineObs {
 		if (!chunks || !chunks.length) {
 			return null;
 		}
+		signal?.throwIfAborted();
 		const { keyMaterial, fileName } = await this.client.e2ee
-			.decryptE2EEDataMessage(message);
+			.decryptE2EEDataMessage(message, false, signal);
+		if (typeof keyMaterial !== "string" && !Buffer.isBuffer(keyMaterial)) {
+			// Unreachable for messages linejs itself encrypted (it always
+			// writes a base64 string); guards the wire boundary explicitly
+			// instead of trusting it.
+			throw new InternalError(
+				"ObsError",
+				"message keyMaterial is missing or malformed",
+			);
+		}
+		signal?.throwIfAborted();
 		const talkMeta = Buffer.from(JSON.stringify({
 			message: Buffer.from(
 				writeStruct(
@@ -436,14 +518,22 @@ export class LineObs {
 			oid: contentMetadata.OID,
 			obsPath: "talk/" + contentMetadata.SID,
 			addHeaders: { "X-Talk-Meta": talkMeta },
+			signal,
 		});
-		const fileData = new File([
-			// @ts-expect-error: will fix cuz typescript version change
-			await this.client.e2ee.decryptByKeyMaterial(
-				Buffer.from(await data.arrayBuffer()),
-				keyMaterial,
-			),
-		], fileName);
+		signal?.throwIfAborted();
+		const bytes = await abortable(() => data.arrayBuffer(), signal);
+		signal?.throwIfAborted();
+		const decrypted = await abortable(
+			() =>
+				this.client.e2ee.decryptByKeyMaterial(
+					Buffer.from(bytes),
+					keyMaterial,
+				),
+			signal,
+		);
+		signal?.throwIfAborted();
+		// @ts-expect-error: will fix cuz typescript version change
+		const fileData = new File([decrypted], fileName);
 		return fileData;
 	}
 }

@@ -50,7 +50,10 @@ export function buildBindingRequest(opts: {
 	const txId = opts.transactionId ?? randomBytes(12);
 	const attrs: { type: number; data: Uint8Array }[] = [];
 	if (opts.username) {
-		attrs.push({ type: ATTR_USERNAME, data: new TextEncoder().encode(opts.username) });
+		attrs.push({
+			type: ATTR_USERNAME,
+			data: new TextEncoder().encode(opts.username),
+		});
 	}
 	if (opts.priority !== undefined) {
 		const b = new Uint8Array(4);
@@ -58,7 +61,10 @@ export function buildBindingRequest(opts: {
 		attrs.push({ type: ATTR_PRIORITY, data: b });
 	}
 	if (opts.iceControlling !== undefined) {
-		attrs.push({ type: ATTR_ICE_CONTROLLING, data: bigU64(opts.iceControlling) });
+		attrs.push({
+			type: ATTR_ICE_CONTROLLING,
+			data: bigU64(opts.iceControlling),
+		});
 	}
 	if (opts.iceControlled !== undefined) {
 		attrs.push({ type: ATTR_ICE_CONTROLLED, data: bigU64(opts.iceControlled) });
@@ -106,7 +112,9 @@ export function parseStun(buf: Uint8Array): StunMessage {
 }
 
 /** Pull XOR-MAPPED-ADDRESS (or MAPPED-ADDRESS) out of a Binding Success. */
-export function readMappedAddress(m: StunMessage): StunBindingResult["mappedAddress"] | undefined {
+export function readMappedAddress(
+	m: StunMessage,
+): StunBindingResult["mappedAddress"] | undefined {
 	let raw = m.attrs.get(ATTR_XOR_MAPPED_ADDR);
 	let xor = !!raw;
 	if (!raw) {
@@ -200,8 +208,9 @@ function require_node_crypto(): typeof import("node:crypto") {
 	if (!_crypto) {
 		// dynamic require via the CJS shim that node:crypto exposes
 		// — at runtime in Deno/Node, this loads instantly the first call.
-		_crypto = (globalThis as { require?: (m: string) => unknown }).require?.("node:crypto") as
-			typeof import("node:crypto");
+		_crypto = (globalThis as { require?: (m: string) => unknown }).require?.(
+			"node:crypto",
+		) as typeof import("node:crypto");
 		if (!_crypto) {
 			throw new Error(
 				"STUN: node:crypto unavailable. Use buildBindingRequestAsync() instead.",
@@ -212,9 +221,13 @@ function require_node_crypto(): typeof import("node:crypto") {
 }
 
 /** Async variant that doesn't require sync require(). */
-export async function buildBindingRequestAsync(opts: Parameters<typeof buildBindingRequest>[0]): Promise<Uint8Array> {
+export async function buildBindingRequestAsync(
+	opts: Parameters<typeof buildBindingRequest>[0],
+): Promise<Uint8Array> {
 	// Just defer to sync version using dynamic import to warm crypto.
-	await import("node:crypto").then((c) => { _crypto = c; });
+	await import("node:crypto").then((c) => {
+		_crypto = c;
+	});
 	return buildBindingRequest(opts);
 }
 
@@ -231,7 +244,9 @@ const CRC32_TABLE = (() => {
 
 function crc32(buf: Uint8Array): number {
 	let c = 0xffffffff;
-	for (let i = 0; i < buf.length; i++) c = CRC32_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+	for (let i = 0; i < buf.length; i++) {
+		c = CRC32_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+	}
 	return (c ^ 0xffffffff) >>> 0;
 }
 
@@ -247,4 +262,9 @@ function randomBytes(n: number): Uint8Array {
 	return b;
 }
 
-export { ATTR_USE_CANDIDATE, ATTR_USERNAME, ATTR_XOR_MAPPED_ADDR, CLASS_SUCCESS };
+export {
+	ATTR_USE_CANDIDATE,
+	ATTR_USERNAME,
+	ATTR_XOR_MAPPED_ADDR,
+	CLASS_SUCCESS,
+};

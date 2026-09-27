@@ -1,10 +1,5 @@
 import { assert, assertEquals } from "@std/assert";
-import {
-	buildRtcpBye,
-	buildRtcpCompound,
-	nowNtp,
-	parseRtcp,
-} from "./rtcp.ts";
+import { buildRtcpBye, buildRtcpCompound, nowNtp, parseRtcp } from "./rtcp.ts";
 
 Deno.test("nowNtp returns a value above the 1900-epoch threshold", () => {
 	const t = nowNtp();
@@ -73,7 +68,13 @@ Deno.test("buildRtcpBye + parseRtcp recovers reason", () => {
 Deno.test("parseRtcp ignores garbage past last valid packet", () => {
 	const sr = buildRtcpCompound({
 		senderSsrc: 1,
-		sender: { ntpSec: 1, ntpFrac: 0, rtpTimestamp: 1, packetCount: 1, octetCount: 1 },
+		sender: {
+			ntpSec: 1,
+			ntpFrac: 0,
+			rtpTimestamp: 1,
+			packetCount: 1,
+			octetCount: 1,
+		},
 		cname: "x",
 	});
 	const garbage = new Uint8Array([0xff, 0xff, 0xff, 0xff]);

@@ -3,7 +3,7 @@ import type {
 	Location,
 	Message,
 	MessageReactionType,
-} from "@evex/linejs-types";
+} from "@frankekn/linejs-types";
 import type { Client } from "../../client.ts";
 
 import type {
@@ -364,7 +364,7 @@ export class TalkMessage {
 	/**
 	 * @return {Blob} message data
 	 */
-	async getData(preview?: boolean): Promise<Blob> {
+	async getData(preview?: boolean, signal?: AbortSignal): Promise<Blob> {
 		if (!hasContents.includes(this.#content.type as string)) {
 			throw new TypeError(
 				"message have no contents",
@@ -373,17 +373,18 @@ export class TalkMessage {
 		if (this.raw.contentMetadata.DOWNLOAD_URL) {
 			if (preview) {
 				const r = await this.#client.base
-					.fetch(this.raw.contentMetadata.PREVIEW_URL);
+					.fetch(this.raw.contentMetadata.PREVIEW_URL, { signal });
 				return await r.blob();
 			} else {
 				const r = await this.#client.base
-					.fetch(this.raw.contentMetadata.DOWNLOAD_URL);
+					.fetch(this.raw.contentMetadata.DOWNLOAD_URL, { signal });
 				return await r.blob();
 			}
 		}
 		if (this.raw.chunks) {
 			const file = await this.#client.base.obs.downloadMediaByE2EE(
 				this.raw,
+				signal,
 			);
 			if (!file) {
 				throw new InternalError("ObsError", "Download failed");
@@ -394,6 +395,7 @@ export class TalkMessage {
 				messageId: this.raw.id,
 				isPreview: preview,
 				isSquare: false,
+				signal,
 			});
 		}
 	}
@@ -428,11 +430,14 @@ export class TalkMessage {
 	 * Whether the message has been edited.
 	 */
 	get isEdited(): boolean {
-		// EDIT_MESSAGE / NOTIFIED_EDIT_MESSAGE operations carry the marker in
-		// contentMetadata; `updatedTime` is only set on messages fetched from
-		// the message box.
+		// Where the marker lives depends on where the message came from:
+		// EDIT_MESSAGE / NOTIFIED_EDIT_MESSAGE operations set both `EDITED` and
+		// `UPDATED_TIME` in contentMetadata, while messages fetched from the
+		// message box carry only `UPDATED_TIME`. The `updatedTime` field is
+		// kept as a fallback. Any edit time means the message was edited, so
+		// defer to `updatedTime` rather than repeating its lookup here.
 		return this.raw.contentMetadata?.EDITED === "true" ||
-			Boolean(this.raw.updatedTime);
+			this.updatedTime !== null;
 	}
 	/**
 	 * Time the message was last edited, or `null` when it has never been

@@ -25,14 +25,25 @@ export interface IceCandidate {
 }
 
 /** Compute the standard ICE priority for a candidate. */
-export function icePriority(type: IceCandidateType, componentId: number, localPref = 65535): number {
-	const typePref = type === "host" ? 126 : type === "srflx" ? 100 : type === "prflx" ? 110 : 0;
+export function icePriority(
+	type: IceCandidateType,
+	componentId: number,
+	localPref = 65535,
+): number {
+	const typePref = type === "host"
+		? 126
+		: type === "srflx"
+		? 100
+		: type === "prflx"
+		? 110
+		: 0;
 	return ((typePref << 24) | (localPref << 8) | (256 - componentId)) >>> 0;
 }
 
 /** Format a candidate as the `candidate:` line value (the bit after `a=`). */
 export function formatCandidate(c: IceCandidate): string {
-	let s = `candidate:${c.foundation} ${c.componentId} ${c.transport} ${c.priority} ${c.address} ${c.port} typ ${c.type}`;
+	let s =
+		`candidate:${c.foundation} ${c.componentId} ${c.transport} ${c.priority} ${c.address} ${c.port} typ ${c.type}`;
 	if (c.relatedAddress && c.relatedPort !== undefined) {
 		s += ` raddr ${c.relatedAddress} rport ${c.relatedPort}`;
 	}

@@ -16,7 +16,7 @@
 
 import { Buffer } from "node:buffer";
 import type { Socket as DgramSocket } from "node:dgram";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "@frankekn/linejs-types";
 import type { CallTransport } from "../session.ts";
 import { makeChunkHdr, parseFrameHeader } from "./framing.ts";
 import {

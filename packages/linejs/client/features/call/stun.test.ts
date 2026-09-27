@@ -31,14 +31,24 @@ Deno.test("buildBindingRequest + parseStun round-trip", async () => {
 
 Deno.test("STUN live probe against stun.l.google.com:19302 — discovers XOR-MAPPED-ADDRESS", async () => {
 	const sock = dgram.createSocket("udp4");
-	await new Promise<void>((r) => sock.bind({ address: "0.0.0.0", port: 0 }, () => r()));
+	await new Promise<void>((r) =>
+		sock.bind({ address: "0.0.0.0", port: 0 }, () => r())
+	);
 	const respPromise = new Promise<Uint8Array>((res, rj) => {
 		const t = setTimeout(() => rj(new Error("STUN timeout")), 5000);
-		sock.once("message", (buf) => { clearTimeout(t); res(new Uint8Array(buf)); });
+		sock.once("message", (buf) => {
+			clearTimeout(t);
+			res(new Uint8Array(buf));
+		});
 	});
 	const req = await buildBindingRequestAsync({});
 	await new Promise<void>((res, rj) =>
-		sock.send(Buffer.from(req), 19302, "stun.l.google.com", (e) => e ? rj(e) : res())
+		sock.send(
+			Buffer.from(req),
+			19302,
+			"stun.l.google.com",
+			(e) => e ? rj(e) : res(),
+		)
 	);
 	try {
 		const resp = await respPromise;

@@ -14,7 +14,11 @@ export interface LegyEncryptedFetchOptions {
 	userAgent: string;
 }
 
-const LEGY_ENDPOINT = "https://gf.line.naver.jp/enc";
+// Default endpoint follows the client's own default-connection-info
+// (LINE 26.14.0): legy.line-apps.com. The legacy gf.line.naver.jp name
+// is a DNS alias into the same LEGY gateway pool, but the client no
+// longer ships it — see scripts/apk/reports/HOST_MIGRATION.md.
+const LEGY_ENDPOINT = "https://legy.line-apps.com/enc";
 const LEGY_LE = "7";
 const LEGY_LAP = "5";
 const LEGY_LCS_PREFIX = "0008";
@@ -48,11 +52,13 @@ cbviGkOvTlBt1+RerIFHMTw3SwLDnCOolTz3CuE5V2OrPZCmC0nlmPRzwUfxoxxs
 
 export class LegyEncryptedTransport {
 	readonly endpoint: string;
+	readonly locale: string;
 	#aesKey = randomBytes(16);
 	#xLcs?: string;
 
-	constructor(endpoint = LEGY_ENDPOINT) {
+	constructor(endpoint = LEGY_ENDPOINT, locale = "zh_TW") {
 		this.endpoint = endpoint;
+		this.locale = locale;
 	}
 
 	async fetch(
@@ -88,6 +94,13 @@ export class LegyEncryptedTransport {
 			new Request(options.endpoint ?? this.endpoint, {
 				method: "POST",
 				headers: this.#outerHeaders(request, options),
+				// The outer request is the one that reaches the network, so it has
+				// to carry the caller's signal. Without it the
+				// `AbortSignal.timeout()` set in packages/linejs/base/request/mod.ts
+				// never applied to encrypted calls, and a keep-alive connection that
+				// died while the host was suspended hung the call for the whole TCP
+				// retry window.
+				signal: request.signal,
 				body: new Uint8Array(encrypted),
 			}),
 		);
@@ -133,7 +146,7 @@ export class LegyEncryptedTransport {
 			"content-type",
 			request.headers.get("content-type") ?? "application/x-thrift",
 		);
-		headers.set("x-lal", request.headers.get("x-lal") ?? "ja_JP");
+		headers.set("x-lal", request.headers.get("x-lal") ?? this.locale);
 		headers.set("x-lhm", request.headers.get("x-lhm") ?? request.method);
 		headers.set("accept", request.headers.get("accept") ?? "*/*");
 		headers.set("accept-encoding", "gzip, deflate");

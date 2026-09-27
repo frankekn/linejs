@@ -34,10 +34,13 @@ async function spawnEchoCallServer(): Promise<{
 			const reply = buildSip({
 				startLine: "SIP/2.0 401 Unauthorized",
 				headers: {
-					Via: sip.headers["Via"], From: sip.headers["From"],
+					Via: sip.headers["Via"],
+					From: sip.headers["From"],
 					To: `${sip.headers["To"]};tag=uas`,
-					"Call-ID": sip.headers["Call-ID"], CSeq: sip.headers["CSeq"],
-					"WWW-Authenticate": `Digest realm="echo", nonce="n1", qop="auth", algorithm=MD5`,
+					"Call-ID": sip.headers["Call-ID"],
+					CSeq: sip.headers["CSeq"],
+					"WWW-Authenticate":
+						`Digest realm="echo", nonce="n1", qop="auth", algorithm=MD5`,
 					"Content-Length": "0",
 				},
 				body: "",
@@ -48,9 +51,11 @@ async function spawnEchoCallServer(): Promise<{
 			const reply = buildSip({
 				startLine: "SIP/2.0 200 OK",
 				headers: {
-					Via: sip.headers["Via"], From: sip.headers["From"],
+					Via: sip.headers["Via"],
+					From: sip.headers["From"],
 					To: `${sip.headers["To"]};tag=uas`,
-					"Call-ID": sip.headers["Call-ID"], CSeq: sip.headers["CSeq"],
+					"Call-ID": sip.headers["Call-ID"],
+					CSeq: sip.headers["CSeq"],
 					"Content-Length": "0",
 				},
 				body: "",
@@ -61,22 +66,30 @@ async function spawnEchoCallServer(): Promise<{
 			const remoteKey = new Uint8Array(30);
 			for (let i = 0; i < 30; i++) remoteKey[i] = (i * 11 + 3) & 0xff;
 			let s = "";
-			for (let i = 0; i < remoteKey.length; i++) s += String.fromCharCode(remoteKey[i]);
+			for (let i = 0; i < remoteKey.length; i++) {
+				s += String.fromCharCode(remoteKey[i]);
+			}
 			const port = (sock.address() as { port: number }).port;
 			const answer = [
-				"v=0", "o=uas 1 1 IN IP4 127.0.0.1", "s=-",
-				`c=IN IP4 127.0.0.1`, "t=0 0",
+				"v=0",
+				"o=uas 1 1 IN IP4 127.0.0.1",
+				"s=-",
+				`c=IN IP4 127.0.0.1`,
+				"t=0 0",
 				`m=audio ${port} RTP/SAVP 96`,
 				"a=rtpmap:96 opus/48000/2",
 				`a=crypto:1 AES_CM_128_HMAC_SHA1_80 inline:${btoa(s)}`,
-				"a=sendrecv", "",
+				"a=sendrecv",
+				"",
 			].join("\r\n");
 			const reply = buildSip({
 				startLine: "SIP/2.0 200 OK",
 				headers: {
-					Via: sip.headers["Via"], From: sip.headers["From"],
+					Via: sip.headers["Via"],
+					From: sip.headers["From"],
 					To: `${sip.headers["To"]};tag=callee`,
-					"Call-ID": sip.headers["Call-ID"], CSeq: sip.headers["CSeq"],
+					"Call-ID": sip.headers["Call-ID"],
+					CSeq: sip.headers["CSeq"],
 					"Content-Type": "application/sdp",
 					"Content-Length": String(answer.length),
 				},
@@ -88,9 +101,12 @@ async function spawnEchoCallServer(): Promise<{
 			const reply = buildSip({
 				startLine: "SIP/2.0 200 OK",
 				headers: {
-					Via: sip.headers["Via"], From: sip.headers["From"],
-					To: sip.headers["To"], "Call-ID": sip.headers["Call-ID"],
-					CSeq: sip.headers["CSeq"], "Content-Length": "0",
+					Via: sip.headers["Via"],
+					From: sip.headers["From"],
+					To: sip.headers["To"],
+					"Call-ID": sip.headers["Call-ID"],
+					CSeq: sip.headers["CSeq"],
+					"Content-Length": "0",
 				},
 				body: "",
 			});
@@ -98,8 +114,9 @@ async function spawnEchoCallServer(): Promise<{
 		}
 	});
 	const port = await new Promise<number>((res) => {
-		sock.bind({ address: "127.0.0.1", port: 0 }, () =>
-			res((sock.address() as { port: number }).port)
+		sock.bind(
+			{ address: "127.0.0.1", port: 0 },
+			() => res((sock.address() as { port: number }).port),
 		);
 	});
 	return {
@@ -140,7 +157,9 @@ Deno.test("Full call: REGISTER+INVITE+ACK+SRTP-Opus echo+BYE against mock UAS â€
 		// 100ms of 440Hz @ 48kHz mono (Opus's native rate)
 		const samples = new Int16Array(4800);
 		for (let i = 0; i < samples.length; i++) {
-			samples[i] = Math.floor(Math.sin((2 * Math.PI * 440 * i) / 48000) * 10000);
+			samples[i] = Math.floor(
+				Math.sin((2 * Math.PI * 440 * i) / 48000) * 10000,
+			);
 		}
 
 		const sink = bufferSink();
@@ -174,5 +193,8 @@ Deno.test("Full call: REGISTER+INVITE+ACK+SRTP-Opus echo+BYE against mock UAS â€
 		await mock.stop();
 	}
 
-	assert(mock.rtpEchoCount() >= 5, `expected at least 5 SRTP echo packets, got ${mock.rtpEchoCount()}`);
+	assert(
+		mock.rtpEchoCount() >= 5,
+		`expected at least 5 SRTP echo packets, got ${mock.rtpEchoCount()}`,
+	);
 });

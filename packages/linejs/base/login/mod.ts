@@ -2,11 +2,11 @@ import { getRSACrypto } from "./rsa-verify.ts";
 import { EMAIL_REGEX, PASSWORD_REGEX } from "./regex.ts";
 import { type Device, isV3Support } from "../core/utils/devices.ts";
 import { InternalError } from "../core/mod.ts";
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "@frankekn/linejs-types";
 import { Buffer } from "node:buffer";
 import { LINEStruct } from "../thrift/mod.ts";
 import type { BaseClient } from "../core/mod.ts";
-import type { LooseType } from "@evex/loose-types";
+import type { E2EEKeyChainDecodeResult } from "../e2ee/mod.ts";
 import {
 	type AuthTokenInput,
 	parseAuthTokenInput,
@@ -26,8 +26,65 @@ export function registrationAuthEndpoint(
 		: "/api/v3p/rs";
 }
 
+/**
+ * Raw (parse=false) response of the QR login service calls. The wire
+ * structs are fid-keyed, so these shapes keep the numeric thrift field
+ * ids as keys. Schemas per the smali notes on each method.
+ */
+export interface CreateSessionResponse {
+	1: string; // authSessionId (sqr)
+}
+
+export interface CreateQrCodeResponse {
+	1: string; // QR callback URL
+}
+
+export interface CreatePinCodeResponse {
+	1: string; // pincode
+}
+
+export interface CreateQrCodeForSecureResponse {
+	1: string; // callbackUrl
+	2?: number; // longPollingMaxCount
+	3?: number; // longPollingIntervalSec
+	4?: string; // nonce
+}
+
+export interface QrCodeLoginResponse {
+	1: string; // certificate (pem)
+	2: string; // accessToken
+	/** e2eeInfo payload — shape defined by the server, decoded by
+	 * {@link E2EE.decodeE2EEKeyV1}; treated as opaque here. */
+	4?: unknown;
+	5?: unknown; // mid
+}
+
+/** Raw tokenV3IssueResult struct (field ids as keys). */
+export interface TokenV3IssueResultWire {
+	1: string; // accessToken
+	2: string; // refreshToken
+	3: number; // expire
+	6: number; // added to expire for the absolute expiry
+}
+
+export interface QrCodeLoginV2ForSecureResponse {
+	1: string; // certificate (pem)
+	3: TokenV3IssueResultWire; // tokenV3IssueResult
+	4?: unknown; // mid
+	6?: Record<string, string>; // metaData (map<string,string>)
+	/** e2eeInfo historically arrived here on the non-ForSecure variant. */
+	10?: unknown;
+}
+
+/** Raw (parse=false) loginV2 response struct (field ids as keys). */
+export interface LoginV2RawResponse {
+	2: string; // certificate
+	3: string; // verifier (x-line-access)
+	9: TokenV3IssueResultWire; // tokenV3IssueResult
+}
+
 interface LoginVer {
-	loginV2: LooseType;
+	loginV2: LoginV2RawResponse;
 	loginZ: LINETypes.LoginResult;
 }
 
@@ -196,6 +253,7 @@ export class Login {
 		}
 		this.client.emit("update:authtoken", authToken);
 		this.client.authToken = authToken;
+		await this.client.e2ee.verifyLoginKey();
 	}
 
 	public async requestSQR(): Promise<string> {
@@ -218,7 +276,7 @@ export class Login {
 				this.client.emit("update:qrcert", pem);
 				await this.registerQrCert(pem);
 			}
-			let e2eeKeyResult: LooseType = undefined;
+			let e2eeKeyResult: E2EEKeyChainDecodeResult | undefined;
 			if (e2eeInfo) {
 				e2eeKeyResult = await this.client.e2ee.decodeE2EEKeyV1(
 					e2eeInfo,
@@ -293,7 +351,7 @@ export class Login {
 			// ForSecure response, and in metaData["e2eeInfo"] on
 			// ForSecure.  Try both.
 			const e2eeInfo = response[10] ?? metaData?.["e2eeInfo"];
-			let e2eeKeyResult: LooseType = undefined;
+			let e2eeKeyResult: E2EEKeyChainDecodeResult | undefined;
 			if (e2eeInfo) {
 				e2eeKeyResult = await this.client.e2ee.decodeE2EEKeyV1(
 					e2eeInfo,
@@ -366,6 +424,7 @@ export class Login {
 		}
 		this.client.emit("update:authtoken", authToken);
 		this.client.authToken = authToken;
+		await this.client.e2ee.verifyLoginKey();
 	}
 
 	/**
@@ -684,7 +743,7 @@ export class Login {
 		);
 	}
 
-	public async createSession(): Promise<LooseType> {
+	public async createSession(): Promise<CreateSessionResponse> {
 		return await this.client.request.request(
 			[],
 			"createSession",
@@ -694,7 +753,7 @@ export class Login {
 		);
 	}
 
-	public async createQrCode(qrcode: string): Promise<LooseType> {
+	public async createQrCode(qrcode: string): Promise<CreateQrCodeResponse> {
 		return await this.client.request.request(
 			[[12, 1, [[11, 1, qrcode]]]],
 			"createQrCode",
@@ -744,7 +803,7 @@ export class Login {
 	public async verifyCertificate(
 		qrcode: string,
 		cert?: string | undefined,
-	): Promise<LooseType> {
+	): Promise<Record<string, unknown>> {
 		return await this.client.request.request(
 			[[12, 1, [[11, 1, qrcode], [11, 2, cert]]]],
 			"verifyCertificate",
@@ -754,7 +813,7 @@ export class Login {
 		);
 	}
 
-	public async createPinCode(qrcode: string): Promise<LooseType> {
+	public async createPinCode(qrcode: string): Promise<CreatePinCodeResponse> {
 		return await this.client.request.request(
 			[[12, 1, [[11, 1, qrcode]]]],
 			"createPinCode",
@@ -802,7 +861,7 @@ export class Login {
 	public async qrCodeLogin(
 		authSessionId: string,
 		autoLoginIsRequired: boolean = true,
-	): Promise<LooseType> {
+	): Promise<QrCodeLoginResponse> {
 		return await this.client.request.request(
 			[[12, 1, [
 				[11, 1, authSessionId],
@@ -821,7 +880,7 @@ export class Login {
 		modelName: string = "evex-device",
 		systemName: string = "linejs-v2",
 		autoLoginIsRequired: boolean = true,
-	): Promise<LooseType> {
+	): Promise<QrCodeLoginV2ForSecureResponse> {
 		return await this.client.request.request(
 			[[12, 1, [
 				[11, 1, authSessionId],
@@ -852,7 +911,7 @@ export class Login {
 	 */
 	public async createQrCodeForSecure(
 		authSessionId: string,
-	): Promise<LooseType> {
+	): Promise<CreateQrCodeForSecureResponse> {
 		return await this.client.request.request(
 			[[12, 1, [[11, 1, authSessionId]]]],
 			"createQrCodeForSecure",
@@ -877,10 +936,10 @@ export class Login {
 	public async qrCodeLoginV2ForSecure(
 		authSessionId: string,
 		nonce: string,
-		modelName: string = "evex-device",
-		systemName: string = "linejs-v2",
+		modelName: string = this.client.deviceIdentity.modelName,
+		systemName: string = this.client.deviceIdentity.systemName,
 		autoLoginIsRequired: boolean = true,
-	): Promise<LooseType> {
+	): Promise<QrCodeLoginV2ForSecureResponse> {
 		return await this.client.request.request(
 			[[12, 1, [
 				[11, 1, authSessionId],
@@ -899,7 +958,7 @@ export class Login {
 	public async confirmE2EELogin(
 		verifier: string,
 		deviceSecret: Buffer,
-	): Promise<LooseType> {
+	): Promise<string> {
 		return await this.client.request.request(
 			[
 				[11, 1, verifier],
@@ -937,7 +996,7 @@ export class Login {
 		encryptedKeyChain: Buffer;
 		hashKeyChain: Buffer;
 		errorCode?: number;
-	}): Promise<LooseType> {
+	}): Promise<Record<string, unknown>> {
 		const { verifier, publicKey, encryptedKeyChain, hashKeyChain } = opts;
 		const errorCode = opts.errorCode ?? 0;
 		const pk = publicKey as unknown as {

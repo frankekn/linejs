@@ -45,7 +45,9 @@ Deno.test("formatCandidate + parseCandidate round-trip with raddr/rport", () => 
 });
 
 Deno.test("parseCandidate accepts the full 'a=candidate:' prefix", () => {
-	const c = parseCandidate("candidate:1 1 udp 2113929471 192.168.1.5 50000 typ host");
+	const c = parseCandidate(
+		"candidate:1 1 udp 2113929471 192.168.1.5 50000 typ host",
+	);
 	assertEquals(c?.type, "host");
 });
 

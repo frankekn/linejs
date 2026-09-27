@@ -128,7 +128,9 @@ export function cryptoAttr(opts: {
 }
 
 /** Pull `a=key-mgmt:mikey <base64>` (RFC 4567). */
-export function readKeyMgmt(m: SdpMedia): { proto: string; data: string } | null {
+export function readKeyMgmt(
+	m: SdpMedia,
+): { proto: string; data: string } | null {
 	for (const a of m.attrs) {
 		const x = a.match(/^key-mgmt:(\S+)\s+(\S+)/);
 		if (x) return { proto: x[1], data: x[2] };

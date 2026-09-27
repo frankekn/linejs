@@ -1,7 +1,7 @@
 # LINEJS
 
-[![JSR](https://jsr.io/badges/@evex/linejs?from=github)](https://jsr.io/@evex/linejs)
-[![JSR Score](https://jsr.io/badges/@evex/linejs/score?from=github)](https://jsr.io/@evex/linejs)
+[![JSR](https://jsr.io/badges/@frankekn/linejs?from=github)](https://jsr.io/@frankekn/linejs)
+[![JSR Score](https://jsr.io/badges/@frankekn/linejs/score?from=github)](https://jsr.io/@frankekn/linejs)
 [![JSR Scope](https://jsr.io/badges/@evex?from=github)](https://jsr.io/@evex)
 ![release workflow](https://github.com/evex-dev/linejs/actions/workflows/release.yml/badge.svg)\
 [![](https://dcbadge.limes.pink/api/server/evex)](https://discord.gg/evex)
@@ -28,15 +28,15 @@
 Supports all runtimes (Node.js, Deno, and Bun) and Typescript.
 
 ```llvm
-npx jsr add @evex/linejs
-bunx --bun jsr add @evex/linejs
-deno add @evex/linejs
+npx jsr add @frankekn/linejs
+bunx --bun jsr add @frankekn/linejs
+deno add @frankekn/linejs
 ```
 
 ### For AI coding agents
 
-Install LINEJS as a skill so Codex, Claude Code, and other coding
-agents know how to work with the library:
+Install LINEJS as a skill so Codex, Claude Code, and other coding agents know
+how to work with the library:
 
 ```sh
 npx skills add evex-dev/linejs --skill linejs
@@ -56,39 +56,39 @@ deno run main.js
 
 ## Migrating from v1
 
-The v1 → v2 surface change is large enough that a step-by-step manual
-diff isn't worth maintaining.  Install the agent skill (see
-[Installation](#installation)) and ask your coding agent to migrate
-the affected files — it will read the skill's roadmap, pull the
-current API shapes, and rewrite call sites against the live source.
+The v1 → v2 surface change is large enough that a step-by-step manual diff isn't
+worth maintaining. Install the agent skill (see [Installation](#installation))
+and ask your coding agent to migrate the affected files — it will read the
+skill's roadmap, pull the current API shapes, and rewrite call sites against the
+live source.
 
 ## Browser Support
 
-For now, please use "https://esm.sh/jsr/@evex/linejs".
+For now, please use "https://esm.sh/jsr/@frankekn/linejs".
 
 Example is [here](./example/browser).
 
 ## LINEJS Types
 
-Please see [@evex/linejs-types](https://jsr.io/@evex/linejs-types).\
+Please see [@frankekn/linejs-types](https://jsr.io/@frankekn/linejs-types).\
 In short, TypeScript types and enums (such as ReactionType (0, 1, 2, 3),
 MessageType, etc.) are provided.
 
 ## Provided Packages
 
-- client - (@evex/linejs)
+- client - (@frankekn/linejs)
   - Client - LINE SelfBot Client
-- base - (@evex/linejs/base)
+- base - (@frankekn/linejs/base)
   - BaseClient - LINE SelfBot API Client
-- call - (@evex/linejs/call)
+- call - (@frankekn/linejs/call)
   - Call control-plane and media helpers
-- thrift - (@evex/linejs/thrift)
+- thrift - (@frankekn/linejs/thrift)
   - Thrift - Thrift read/write
-- storage - (@evex/linejs/storage)
+- storage - (@frankekn/linejs/storage)
   - BaseStorage - LINE Client Storage Type
   - MemoryStorage - LINE Client Memory Storage
   - FileStorage - LINE Client File Storage
-- types - (@evex/linejs-types)
+- types - (@frankekn/linejs-types)
   - All Types for LINE
 
 ## Authors

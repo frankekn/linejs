@@ -1,4 +1,4 @@
-import type * as line from "@evex/linejs-types";
+import type * as line from "@frankekn/linejs-types";
 import type { Client } from "../../mod.ts";
 import type {
 	CompactMessageResponse,

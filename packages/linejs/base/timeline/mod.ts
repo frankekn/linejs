@@ -2,9 +2,8 @@
 import { Buffer } from "node:buffer";
 import crypto from "node:crypto";
 import type { BaseClient } from "../mod.ts";
-import type { LooseType } from "@evex/loose-types";
 
-export type TimelineResponse<T = LooseType> = {
+export type TimelineResponse<T = unknown> = {
 	code: number;
 	message: string;
 	result: T;
@@ -105,7 +104,7 @@ export class Timeline {
 			homeId: homeId,
 			sourceType: sourceType,
 		});
-		const postInfo: LooseType = {
+		const postInfo: Record<string, unknown> = {
 			readPermission: {
 				type: readPermissionType,
 				gids: readPermissionGids,
@@ -149,7 +148,7 @@ export class Timeline {
 				obsFace: "[]",
 			});
 		});
-		const contents: LooseType = {
+		const contents: Record<string, unknown> = {
 			contentsStyle: {
 				textStyle: {
 					textSizeMode: textSizeMode,
@@ -263,7 +262,7 @@ export class Timeline {
 			{ headers },
 		).then((r) => r.json());
 	}
-	
+
 	public async updatePost(options: {
 		homeId: string;
 		postId: string;
@@ -317,7 +316,7 @@ export class Timeline {
 		if (!postId) {
 			throw new Error("postId is required");
 		}
-		const postInfo: LooseType = {
+		const postInfo: Record<string, unknown> = {
 			postId: postId,
 			editableContents: ["ALL"],
 			readPermission: {
@@ -362,16 +361,20 @@ export class Timeline {
 				obsFace: "[]",
 			});
 		});
-		const contents: LooseType = {
+		const contents: Record<string, unknown> = {
 			sticonMetas: [],
 			contentsStyle: {
-				textStyle: textSizeMode || textAnimation ? {
-					textSizeMode: textSizeMode,
-					textAnimation: textAnimation,
-				} : {},
-				stickerStyle: backgroundColor ? {
-					backgroundColor: backgroundColor,
-				} : {},
+				textStyle: textSizeMode || textAnimation
+					? {
+						textSizeMode: textSizeMode,
+						textAnimation: textAnimation,
+					}
+					: {},
+				stickerStyle: backgroundColor
+					? {
+						backgroundColor: backgroundColor,
+					}
+					: {},
 				mediaStyle: {},
 			},
 			stickers: stickers,
@@ -442,7 +445,7 @@ export class Timeline {
 		commentText: string;
 		homeId: string;
 		sourceType?: string;
-		contentsList?: LooseType[];
+		contentsList?: unknown[];
 	}): Promise<TimelineResponse> {
 		await this.initTimeline();
 		const { contentId, commentText, homeId, sourceType, contentsList } = {
@@ -472,7 +475,7 @@ export class Timeline {
 			},
 		).then((r) => r.json());
 	}
-	
+
 	public async sharePost(options: {
 		postId: string;
 		chatMid: string;

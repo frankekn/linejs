@@ -7,8 +7,6 @@ import {
 	LegyH2SignOnResponseFrame,
 } from "./connData.ts";
 import type { ConnManager, ReadableStreamWriter } from "./connManager.ts";
-import { getH2EnabledFetchForNode } from "./h2_fetch.ts";
-import type { LooseType } from "@evex/loose-types";
 
 export class Conn {
 	manager: ConnManager;
@@ -34,7 +32,7 @@ export class Conn {
 		stream: ReadableStream<Uint8Array<ArrayBufferLike>>;
 		enqueue(chunk: string | Uint8Array): void;
 		close(): void;
-		error(err: LooseType): void;
+		error(err: unknown): void;
 		renew(): void;
 	} {
 		let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
@@ -74,7 +72,7 @@ export class Conn {
 				controller?.close();
 				controller = null;
 			},
-			error(err: LooseType) {
+			error(err: unknown) {
 				controller?.error(err);
 				controller = null;
 			},
@@ -107,14 +105,8 @@ export class Conn {
 		path: string,
 		headers: Record<string, string> = {},
 	) {
-		// LINE's push endpoint speaks HTTP/2 only. On Node.js the native
-		// fetch defaults to h1 and the stream silently never starts; we
-		// transparently swap in an undici-backed fetch with allowH2 just
-		// for this connection. On Deno/Bun/browser native fetch already
-		// does h2 and this lookup returns null, so the user's fetch is
-		// used as-is. See packages/linejs/base/push/h2_fetch.ts.
-		const fetchFn = (await getH2EnabledFetchForNode()) ??
-			this.client.fetch;
+		// BaseClient scopes Node's HTTP/2 dispatcher and connect timeout.
+		const fetchFn = this.client.fetchPush ?? this.client.fetch;
 		const bodystream = this.createAsyncReadableStream();
 		const abort = new AbortController();
 		await new Promise<void>((resolve) => {
@@ -132,7 +124,23 @@ export class Conn {
 				}
 				this.resStream = socket.body;
 				resolve();
-			})();
+			})().catch((error) => {
+				// Nothing awaits this IIFE, so a transport failure here used to
+				// surface as an unhandled rejection and take the host process down
+				// with it. Report it the way the pusher reports its other errors
+				// and resolve: `resStream` stays unset, `read()` throws, and the
+				// reconnect loop in packages/linejs/base/polling/mod.ts retries the
+				// connection.
+				resolve();
+				try {
+					this.client.log("LegyPusherError", { error });
+				} catch {
+					// `log` is user-supplied. Letting it throw would reject this
+					// handler and put back the unhandled rejection it exists to
+					// prevent, so a broken listener is swallowed here; resolve()
+					// has already run, so the connect race settles either way.
+				}
+			});
 			setTimeout(resolve, 300);
 		});
 		this.reqStream = { ...bodystream, abort };

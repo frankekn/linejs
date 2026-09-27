@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 import type { ParsedThrift } from "../readwrite/declares.ts";
 
 // const TYPE: Record<string, number> = {
@@ -21,25 +20,62 @@ import type { ParsedThrift } from "../readwrite/declares.ts";
 // 	UTF16: 17,
 // };
 
-// function getType(obj: any) {
-// 	if (obj.type === "BaseType") {
-// 		return TYPE[obj.baseType.toUpperCase()];
-// 	} else if (obj.type === "Identifier") {
-// 		return obj.name;
-// 	}
-// }
+/** One field entry of a struct definition from the LINE thrift def. */
+interface StructFieldDef {
+	fid: string | number;
+	name: string;
+	struct?: string;
+	list?: string | number;
+	map?: string | number;
+	set?: string | number;
+	type?: number;
+}
 
-function isStruct(obj: any): obj is any[] {
-	return obj && Array.isArray(obj);
+/** A def table entry is either a struct field list or an enum table. */
+type DefEntry = Record<string, string> | StructFieldDef[];
+
+function isStruct(value: unknown): value is StructFieldDef[] {
+	return Boolean(value) && Array.isArray(value);
+}
+
+/**
+ * Wire structs arrive from the thrift reader as plain fid-keyed objects.
+ * The `typeof value === "object"` runtime branch (which intentionally
+ * includes `null` — a for-in over null simply never iterates) is restated
+ * here so the checker can follow the fid-keyed access. Never changes
+ * runtime behavior.
+ */
+function isWireStruct(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object";
+}
+
+/**
+ * Restates the `typeof value === "object"` branch on the list/set path.
+ * As before, a non-array object (or null) still fails at the
+ * `value.forEach` call with the same TypeError at runtime.
+ */
+function isWireList(value: unknown): value is unknown[] {
+	return typeof value === "object";
+}
+
+/** Enum tables are plain name-by-fid records. */
+function isEnumTable(value: unknown): value is Record<PropertyKey, string> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Only string/number values can hit an enum table key; everything else
+ * misses (JS key coercion) and falls back to the raw value, as before. */
+function isIndexKey(value: unknown): value is string | number {
+	return typeof value === "string" || typeof value === "number";
 }
 
 export class ThriftRenameParser {
-	def: Record<string, Record<string, string> | any[]> = {};
+	def: Record<string, DefEntry> = {};
 
-	#name2fid(structName: string, name: string): any {
+	#name2fid(structName: string, name: string): StructFieldDef {
 		const struct = this.def[structName];
 		if (struct && Array.isArray(struct)) {
-			const result = struct.findIndex((e: any) => {
+			const result = struct.findIndex((e) => {
 				return e.name == name;
 			});
 			if (result === -1) {
@@ -52,10 +88,10 @@ export class ThriftRenameParser {
 		}
 	}
 
-	#fid2name(structName: string, fid: string): any {
+	#fid2name(structName: string, fid: string): StructFieldDef {
 		const struct = this.def[structName];
 		if (struct && Array.isArray(struct)) {
-			const result = struct.findIndex((e: any) => {
+			const result = struct.findIndex((e) => {
 				return e.fid == fid;
 			});
 			if (result === -1) {
@@ -68,11 +104,11 @@ export class ThriftRenameParser {
 		}
 	}
 
-	rename_thrift(structName: string, object: any): any {
-		const newObject: any = {};
-		if (typeof object !== "object") return object;
+	rename_thrift(structName: string, object: unknown): unknown {
+		if (!isWireStruct(object)) return object;
+		const newObject: Record<string, unknown> = {};
 		for (const fid in object) {
-			const value = object[fid];
+			const value: unknown = object[fid];
 			const finfo = this.#fid2name(structName, fid);
 			if (typeof value === "undefined") {
 				continue;
@@ -87,39 +123,43 @@ export class ThriftRenameParser {
 						value,
 					);
 				} else if (this.def[finfo.struct]) {
-					newObject[finfo.name] = (this.def[finfo.struct] as any)[value] ||
-						value;
+					const table = this.def[finfo.struct];
+					// Old wire behavior: an untyped keyed lookup on the enum
+					// table where any miss (including coerced object keys)
+					// falls back to the raw value.
+					newObject[finfo.name] = isEnumTable(table) && isIndexKey(value)
+						? table[value] || value
+						: value;
 				} else {
 					newObject[finfo.name] = value;
 				}
 			} else if (
-				typeof finfo.list === "string" && typeof value === "object"
+				typeof finfo.list === "string" && isWireList(value)
 			) {
-				newObject[finfo.name] = [];
-				value.forEach((e: any, i: number) => {
-					newObject[finfo.name][i] = this.rename_thrift(
-						finfo.list,
-						e,
-					);
+				const listStructName = finfo.list;
+				const list: unknown[] = [];
+				value.forEach((e: unknown, i: number) => {
+					list[i] = this.rename_thrift(listStructName, e);
 				});
+				newObject[finfo.name] = list;
 			} else if (
-				typeof finfo.map === "string" && typeof value === "object"
+				typeof finfo.map === "string" && isWireStruct(value)
 			) {
-				newObject[finfo.name] = {};
+				const mapped: Record<string, unknown> = {};
 				for (const key in value) {
 					const e = value[key];
-					newObject[finfo.name][key] = this.rename_thrift(
-						finfo.map,
-						e,
-					);
+					mapped[key] = this.rename_thrift(finfo.map, e);
 				}
+				newObject[finfo.name] = mapped;
 			} else if (
-				typeof finfo.set === "string" && typeof value === "object"
+				typeof finfo.set === "string" && isWireList(value)
 			) {
-				newObject[finfo.name] = [];
-				value.forEach((e: any, i: number) => {
-					newObject[finfo.name][i] = this.rename_thrift(finfo.set, e);
+				const setStructName = finfo.set;
+				const set: unknown[] = [];
+				value.forEach((e: unknown, i: number) => {
+					set[i] = this.rename_thrift(setStructName, e);
 				});
+				newObject[finfo.name] = set;
 			} else {
 				newObject[finfo.name] = value;
 			}

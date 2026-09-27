@@ -39,7 +39,11 @@ Deno.test("respondE2EELoginRequest — wire shape matches LINE Android smali fh8
 	const login = new Login(stub.client as any);
 	await login.respondE2EELoginRequest({
 		verifier: "ver-x",
-		publicKey: { version: 1, keyId: 2, keyData: Buffer.from([0xaa, 0xbb]) } as never,
+		publicKey: {
+			version: 1,
+			keyId: 2,
+			keyData: Buffer.from([0xaa, 0xbb]),
+		} as never,
 		encryptedKeyChain: Buffer.from("enc"),
 		hashKeyChain: Buffer.from("hash"),
 		errorCode: 0,

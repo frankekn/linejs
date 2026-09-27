@@ -40,10 +40,15 @@ export function text(
 	body: string,
 	sentBy?: LiffTextMessage["sentBy"],
 ): LiffTextMessage {
-	return sentBy ? { type: "text", text: body, sentBy } : { type: "text", text: body };
+	return sentBy
+		? { type: "text", text: body, sentBy }
+		: { type: "text", text: body };
 }
 
-export function sticker(packageId: string, stickerId: string): LiffStickerMessage {
+export function sticker(
+	packageId: string,
+	stickerId: string,
+): LiffStickerMessage {
 	return { type: "sticker", packageId, stickerId };
 }
 
@@ -64,12 +69,14 @@ export function flex(
 export interface LiffClient {
 	readonly defaultLiffId: string;
 	setDefaultLiffId(liffId: string): void;
-	getToken(opts: { chatMid?: string; liffId?: string; lang?: string }): Promise<string>;
+	getToken(
+		opts: { chatMid?: string; liffId?: string; lang?: string },
+	): Promise<string>;
 	issueView(opts: {
 		chatMid?: string;
 		liffId?: string;
 		lang?: string;
-	}): Promise<import("@evex/linejs-types").LiffViewResponse>;
+	}): Promise<import("@frankekn/linejs-types").LiffViewResponse>;
 	issueSubView(
 		...args: Parameters<
 			import("../../base/service/liff/mod.ts").LiffService["issueSubLiffView"]

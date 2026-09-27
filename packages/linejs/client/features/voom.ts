@@ -3,6 +3,14 @@
 // live-verified against gw.line.naver.jp.
 import type { Client } from "../mod.ts";
 
+/**
+ * NOTE: the default host (gw.line.naver.jp) is a legacy alias into the
+ * same LEGY pool; the LINE client itself no longer references it, and
+ * LINE VOOM service ends 2026-09-30 — feed/timelineStatus endpoints are
+ * expected to die with it. `opts.host` remains for probing. See
+ * scripts/apk/reports/HOST_MIGRATION.md before investing here.
+
+
 /** Channel ids from smali t98.a$b. */
 export const VoomChannelId = {
 	TIMELINE: "1341209950",
@@ -144,7 +152,9 @@ export interface VoomClient {
 		opts: Omit<VoomRestOptions, "channelToken">,
 	): Promise<VoomRestResponse<T>>;
 	/** GET /mh/api/v57/post/list.json — VOOM feed. Live-verified (#151). */
-	feed(opts?: { postLimit?: number; followingMaxPage?: number }): Promise<VoomRestResponse>;
+	feed(
+		opts?: { postLimit?: number; followingMaxPage?: number },
+	): Promise<VoomRestResponse>;
 	/** GET /tl/api/v57/timeline/tab/status.json. Live-verified. */
 	timelineStatus(): Promise<VoomRestResponse>;
 }

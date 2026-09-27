@@ -20,6 +20,7 @@ import {
 	CallService,
 	ChannelService,
 	LiffService,
+	MoaService,
 	RelationService,
 	SquareLiveTalkService,
 	SquareService,
@@ -31,16 +32,16 @@ import { Thrift } from "../thrift/mod.ts";
 import { RequestClient } from "../request/mod.ts";
 import type { AuthTokenInput } from "../request/auth_token.ts";
 import { E2EE } from "../e2ee/mod.ts";
+import { createNodeFetch } from "./node_fetch.ts";
 import { LineObs } from "../obs/mod.ts";
 import { Timeline } from "../timeline/mod.ts";
 import { Polling } from "../polling/mod.ts";
 import { ConnManager } from "../push/mod.ts";
 
-import { Thrift as def } from "@evex/linejs-types/thrift";
+import { Thrift as def } from "@frankekn/linejs-types/thrift";
 
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "@frankekn/linejs-types";
 import type { Fetch, FetchLike } from "../types.ts";
-import type { LooseType } from "@evex/loose-types";
 
 export interface LoginOption {
 	email?: string;
@@ -51,6 +52,23 @@ export interface LoginOption {
 	e2ee?: boolean;
 	v3?: boolean;
 }
+
+/** Per-device-type default login personas. These land in LINE's device
+ *  registry and the QR-approve dialog — see fingerprint-research.md.
+ *  Common real-world models per family; override via deviceIdentity. */
+const DEFAULT_DEVICE_PERSONA: Record<
+	string,
+	{ systemName: string; modelName: string }
+> = {
+	ANDROID: { systemName: "Android", modelName: "SM-S928B" },
+	ANDROIDSECONDARY: { systemName: "Android", modelName: "SM-S928B" },
+	IOS: { systemName: "iOS", modelName: "iPhone17,1" },
+	IOSIPAD: { systemName: "iOS", modelName: "iPad14,8" },
+	DESKTOPMAC: { systemName: "macOS", modelName: "Mac15,9" },
+	DESKTOPWIN: { systemName: "Windows", modelName: "ASUSTeKZenbook" },
+	WATCHOS: { systemName: "watchOS", modelName: "Watch8,1" },
+	WEAROS: { systemName: "Wear OS", modelName: "SM-R960" },
+};
 
 export interface ClientInit {
 	/**
@@ -82,6 +100,28 @@ export interface ClientInit {
 	fetch?: FetchLike;
 
 	/**
+	 * Device identity shown to LINE's server-side device registry and,
+	 * for QR logins, in the approving phone's confirmation dialog.
+	 * Real apps send the OS name and Build.MODEL here; the library
+	 * defaults ("linejs-v2" / "evex-device") are an obvious bot tell
+	 * (fingerprint-research.md, 2026-09-22). Pick one persona and keep
+	 * it stable — flipping identities creates fresh device entries.
+	 */
+	deviceIdentity?: {
+		/** e.g. "Android" / "macOS" — real apps send the OS/model name */
+		systemName?: string;
+		/** e.g. "SM-S928B" — a plausible Build.MODEL for the device type */
+		modelName?: string;
+	};
+
+	/**
+	 * Locale sent as `x-lal`. Real apps send the device's actual locale;
+	 * a ja_JP default on a zh-TW account is a contradiction signal.
+	 * @default "zh_TW"
+	 */
+	locale?: string;
+
+	/**
 	 * LEGY encrypted gateway options.
 	 *
 	 * `auto` encrypts requests for modern JWT/primary/auth-key tokens while
@@ -97,7 +137,7 @@ export interface ClientInit {
 
 export interface Config {
 	/**
-	 * Timeout
+	 * Request timeout, also used for Node TCP/TLS connection establishment.
 	 * @default 30_000
 	 */
 	timeout: number;
@@ -129,16 +169,21 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 	readonly call: CallService;
 	readonly channel: ChannelService;
 	readonly liff: LiffService;
+	readonly moa: MoaService;
 	readonly relation: RelationService;
 	readonly livetalk: SquareLiveTalkService;
 	readonly square: SquareService;
 	readonly talk: TalkService;
 	#customFetch?: FetchLike;
+	#nodeFetch = createNodeFetch(false);
+	#nodePushFetch = createNodeFetch(true);
 	disabled?: boolean;
 	profile?: LINETypes.Profile;
 	config: Config;
 	readonly deviceDetails: DeviceDetails;
 	readonly endpoint: string;
+	readonly deviceIdentity: { systemName: string; modelName: string };
+	readonly locale: string;
 	readonly legy: {
 		encrypted: boolean | "auto";
 		endpoint?: string;
@@ -177,6 +222,15 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 		}
 		this.deviceDetails = deviceDetails;
 		this.endpoint = init.endpoint ?? "legy.line-apps.com";
+		const persona = DEFAULT_DEVICE_PERSONA[init.device] ?? {
+			systemName: deviceDetails.systemName,
+			modelName: "PC",
+		};
+		this.deviceIdentity = {
+			systemName: init.deviceIdentity?.systemName ?? persona.systemName,
+			modelName: init.deviceIdentity?.modelName ?? persona.modelName,
+		};
+		this.locale = init.locale ?? "zh_TW";
 		this.config = {
 			timeout: 30_000,
 			longTimeout: 180_000,
@@ -203,12 +257,13 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 		this.channel = new ChannelService(this);
 		this.liff = new LiffService(this);
 		this.livetalk = new SquareLiveTalkService(this);
+		this.moa = new MoaService(this);
 		this.relation = new RelationService(this);
 		this.square = new SquareService(this);
 		this.talk = new TalkService(this);
 	}
 
-	log(type: string, data: Record<string, LooseType>) {
+	log(type: string, data: unknown) {
 		this.emit("log", { type, data });
 	}
 	getToType(mid: string): number | null {
@@ -225,19 +280,27 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 		return typeMapping[mid[0]] ?? null;
 	}
 	reqseqs?: Record<string, number>;
+	#reqseqQueue: Promise<void> = Promise.resolve();
 	async getReqseq(name: string = "talk"): Promise<number> {
-		if (!this.reqseqs) {
-			this.reqseqs = JSON.parse(
-				((await this.storage.get("reqseq")) ?? "{}").toString(),
-			) as Record<string, number>;
-		}
-		if (!this.reqseqs[name]) {
-			this.reqseqs[name] = 0;
-		}
-		const seq = this.reqseqs[name];
-		this.reqseqs[name]++;
-		await this.storage.set("reqseq", JSON.stringify(this.reqseqs));
-		return seq;
+		// Serialize initialization and persistence, including the first parallel
+		// requests. Otherwise each storage read can reset the counter to zero.
+		const next = this.#reqseqQueue.then(async () => {
+			if (!this.reqseqs) {
+				this.reqseqs = JSON.parse(
+					((await this.storage.get("reqseq")) ?? "{}").toString(),
+				) as Record<string, number>;
+			}
+			if (!this.reqseqs[name]) {
+				this.reqseqs[name] = 0;
+			}
+			const seq = this.reqseqs[name];
+			this.reqseqs[name]++;
+			await this.storage.set("reqseq", JSON.stringify(this.reqseqs));
+			return seq;
+		});
+		// A failed storage operation must not poison subsequent allocations.
+		this.#reqseqQueue = next.then(() => {}, () => {});
+		return await next;
 	}
 
 	// NOTE: use allow function.
@@ -247,11 +310,18 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 		init?: RequestInit,
 	): Promise<Response> => {
 		const req = new Request(info, init);
-		const res =
-			await (this.#customFetch
-				? this.#customFetch(req)
-				: globalThis.fetch(req));
+		const fetchFn = this.#customFetch ??
+			(await this.#nodeFetch(this.config.timeout)) ?? globalThis.fetch;
+		const res = await fetchFn(req);
 		return res;
+	};
+
+	/** Node PUSH requires HTTP/2. Explicit custom transports retain control. */
+	readonly fetchPush: Fetch = async (info, init) => {
+		if (this.#customFetch) return this.fetch(info, init);
+		const fetchFn = (await this.#nodePushFetch(this.config.timeout)) ??
+			this.fetch;
+		return fetchFn(info, init);
 	};
 
 	/**
@@ -268,7 +338,7 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 	 * JSON.stringify(data, BaseClient.jsonReplacer);
 	 * ```
 	 */
-	static jsonReplacer(k: LooseType, v: LooseType): LooseType {
+	static jsonReplacer(k: string, v: unknown): unknown {
 		if (typeof v === "bigint") {
 			//@ts-expect-error https://developer.mozilla.org/ja/docs/Web/JavaScript/Reference/Global_Objects/JSON/rawJSON
 			return JSON.rawJSON(v.toString());
@@ -282,7 +352,7 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 				return `[AuthToken]`;
 			}
 		}
-		if (typeof v === "object") {
+		if (isJsonObject(v)) {
 			if (Array.isArray(v)) {
 				return v.map((item) => BaseClient.jsonReplacer("", item));
 			}
@@ -303,7 +373,7 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 				return `Blob[${v.size}]@${v.type}`;
 			}
 
-			const newObj: LooseType = {};
+			const newObj: Record<string, unknown> = {};
 			let midCount = 0;
 			for (const key in v) {
 				if (Object.prototype.hasOwnProperty.call(v, key)) {
@@ -323,4 +393,14 @@ export class BaseClient extends TypedEventEmitter<ClientEvents> {
 		}
 		return v;
 	}
+}
+
+/**
+ * Restates the replacer's old `typeof v === "object"` branch — which
+ * intentionally still includes `null` (a null payload crashes on the
+ * property access below, exactly as before). Unlocks property and index
+ * access for the checker without touching runtime behavior.
+ */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object";
 }

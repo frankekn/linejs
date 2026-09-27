@@ -1,13 +1,15 @@
-import * as LINETypes from "@evex/linejs-types";
+import * as LINETypes from "@frankekn/linejs-types";
 import type { Buffer } from "node:buffer";
 import { type NestedArray } from "../mod.ts";
-function map(
-	call: ((v: any) => NestedArray) | ((v: any) => number),
-	value: any,
-): Record<keyof any, NestedArray | number> {
-	const tMap: Record<keyof any, NestedArray | number> = {};
-	for (const key in value) {
-		const e = value[key];
+function map<V>(
+	call: (value: V) => NestedArray | number,
+	value: Record<string, V> | undefined | null,
+): Record<string, NestedArray | number> {
+	const tMap: Record<string, NestedArray | number> = {};
+	// for...in over null/undefined iterates nothing, exactly as before.
+	const source = value ?? {};
+	for (const key in source) {
+		const e = source[key];
 		tMap[key] = call(e);
 	}
 	return tMap;
@@ -9632,6 +9634,17 @@ export function reserve_args(
 ): NestedArray {
 	return typeof param === "undefined" ? [] : [
 		[12, 1, ReserveRequest(param.request)],
+	];
+}
+export function respondE2EELoginRequest_args(
+	param?: PartialDeep<LINETypes.respondE2EELoginRequest_args> | undefined,
+): NestedArray {
+	return typeof param === "undefined" ? [] : [
+		[11, 1, param.verifier],
+		[12, 2, Pb1_C13097n4(param.publicKey)],
+		[11, 3, param.encryptedKeyChain],
+		[11, 4, param.hashKeyChain],
+		[8, 5, param.errorCode],
 	];
 }
 export function restoreE2EEKeyBackup_args(

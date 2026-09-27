@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import type { Message } from "@evex/linejs-types";
+import type { Message } from "@frankekn/linejs-types";
 import type { Client } from "../../client.ts";
 import { TalkMessage } from "./talk.ts";
 
@@ -39,6 +39,18 @@ Deno.test("TalkMessage.isEdited — updatedTime field", () => {
 		message({ text: "hi", updatedTime: 1700000000000n }).isEdited,
 		true,
 	);
+});
+
+// Messages fetched from the message box (getRecentMessagesV2 and friends) carry
+// only UPDATED_TIME — no EDITED flag and no `updatedTime` field. Shape taken
+// from a live getRecentMessagesV2 response.
+Deno.test("TalkMessage.isEdited — message box metadata (UPDATED_TIME only)", () => {
+	const m = message({
+		id: "1234567890123456789",
+		contentMetadata: { UPDATED_TIME: "1788432321630" },
+	});
+	assertEquals(m.isEdited, true);
+	assertEquals(m.updatedTime, 1788432321630);
 });
 
 Deno.test("TalkMessage.updatedTime", () => {

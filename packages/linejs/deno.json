@@ -1,13 +1,17 @@
 {
-	"name": "@evex/linejs",
-	"version": "0.0.0",
+	"name": "@frankekn/linejs",
+	"version": "3.4.2-omarchy.6",
 	"license": "MIT",
 	"exports": {
 		".": "./client/mod.ts",
 		"./base": "./base/mod.ts",
 		"./call": "./client/features/call/mod.ts",
 		"./storage": "./base/storage/mod.ts",
-		"./thrift": "./base/thrift/mod.ts"
+		"./thrift": "./base/thrift/mod.ts",
+		"./service/shop": "./base/service/shop/mod.ts",
+		"./thrift/readwrite/read": "./base/thrift/readwrite/read.ts",
+		"./thrift/readwrite/declares": "./base/thrift/readwrite/declares.ts",
+		"./thrift/readwrite/write": "./base/thrift/readwrite/write.ts"
 	},
 	"imports": {
 		"@evex/loose-types": "jsr:@evex/loose-types@^1.0.1",

@@ -49,7 +49,11 @@ export function buildRtcpCompound(opts: {
 	return out;
 }
 
-function buildSr(senderSsrc: number, s: SenderInfo, reports: ReportBlock[]): Uint8Array {
+function buildSr(
+	senderSsrc: number,
+	s: SenderInfo,
+	reports: ReportBlock[],
+): Uint8Array {
 	const headerLen = 4 + 24 + reports.length * 24;
 	const out = new Uint8Array(headerLen);
 	const dv = new DataView(out.buffer);
@@ -128,7 +132,7 @@ function buildSdes(ssrc: number, cname: string, tool?: string): Uint8Array {
 export function buildRtcpBye(ssrc: number, reason?: string): Uint8Array {
 	const reasonBytes = reason ? new TextEncoder().encode(reason) : null;
 	const reasonLen = reasonBytes ? 1 + reasonBytes.length : 0;
-	const reasonPad = reasonLen > 0 ? (4 - ((reasonLen) % 4)) % 4 : 0;
+	const reasonPad = reasonLen > 0 ? (4 - (reasonLen % 4)) % 4 : 0;
 	const headerLen = 4 + 4 + reasonLen + reasonPad;
 	const out = new Uint8Array(headerLen);
 	const dv = new DataView(out.buffer);
@@ -194,7 +198,9 @@ export function parseRtcp(buf: Uint8Array): ParsedRtcp[] {
 				const itemType = buf[so];
 				const itemLen = buf[so + 1];
 				if (itemType === SDES_CNAME) {
-					block.cname = new TextDecoder().decode(buf.subarray(so + 2, so + 2 + itemLen));
+					block.cname = new TextDecoder().decode(
+						buf.subarray(so + 2, so + 2 + itemLen),
+					);
 				}
 				so += 2 + itemLen;
 			}
@@ -204,7 +210,9 @@ export function parseRtcp(buf: Uint8Array): ParsedRtcp[] {
 				const ro = off + 4 + rc * 4;
 				const reasonLen = buf[ro];
 				if (reasonLen > 0) {
-					block.byeReason = new TextDecoder().decode(buf.subarray(ro + 1, ro + 1 + reasonLen));
+					block.byeReason = new TextDecoder().decode(
+						buf.subarray(ro + 1, ro + 1 + reasonLen),
+					);
 				}
 			}
 		}
@@ -218,7 +226,8 @@ function readReportBlock(dv: DataView, off: number): ReportBlock {
 	return {
 		ssrc: dv.getUint32(off, false),
 		fractionLost: dv.getUint8(off + 4),
-		cumulativeLost: (dv.getUint8(off + 5) << 16) | (dv.getUint8(off + 6) << 8) | dv.getUint8(off + 7),
+		cumulativeLost: (dv.getUint8(off + 5) << 16) | (dv.getUint8(off + 6) << 8) |
+			dv.getUint8(off + 7),
 		highestSeq: dv.getUint32(off + 8, false),
 		jitter: dv.getUint32(off + 12, false),
 		lastSr: dv.getUint32(off + 16, false),

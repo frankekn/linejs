@@ -29,7 +29,10 @@ Deno.test("parseSip handles header values containing colons", () => {
 		body: "",
 	});
 	const parsed = parseSip(bytes);
-	assertEquals(parsed.headers["WWW-Authenticate"], `Digest realm="r", nonce="n:x:y"`);
+	assertEquals(
+		parsed.headers["WWW-Authenticate"],
+		`Digest realm="r", nonce="n:x:y"`,
+	);
 });
 
 Deno.test("parseDigestChallenge extracts realm/nonce/qop/algorithm", () => {

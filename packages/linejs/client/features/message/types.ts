@@ -1,4 +1,4 @@
-import type { MIDType } from "@evex/linejs-types";
+import type { MIDType } from "@frankekn/linejs-types";
 
 export type MentionTarget = {
 	all: true;

@@ -1,4 +1,3 @@
-// deno-lint-ignore-file no-explicit-any
 // @ts-types="thrift-types"
 import * as thrift from "thrift";
 
@@ -6,13 +5,19 @@ import { Buffer } from "node:buffer";
 import type { ParsedThrift } from "./declares.ts";
 
 /**
- * @returns {any}
+ * A decoded thrift struct: field-id keyed, values as produced by
+ * {@link readValue}.
+ */
+type ThriftStructData = Record<PropertyKey, unknown>;
+
+/**
+ * @returns {ThriftStructData}
  */
 function readStruct(
 	input: thrift.TCompactProtocol | thrift.TBinaryProtocol,
-): any {
+): ThriftStructData {
 	const Thrift = thrift.Thrift;
-	const returnData: Record<PropertyKey, any> = {};
+	const returnData: ThriftStructData = {};
 	input.readStructBegin();
 	while (true) {
 		const { ftype, fid } = input.readFieldBegin();
@@ -55,7 +60,7 @@ function bigInt(bin: Buffer): number | bigint {
 function readValue(
 	input: thrift.TCompactProtocol | thrift.TBinaryProtocol,
 	ftype: thrift.Thrift.Type,
-): any {
+): unknown {
 	const Thrift = thrift.Thrift;
 	if (ftype == Thrift.Type.STRUCT) {
 		return readStruct(input);
@@ -71,7 +76,7 @@ function readValue(
 			return bin.toString();
 		}
 	} else if (ftype == Thrift.Type.LIST) {
-		const returnData: any[] = [];
+		const returnData: unknown[] = [];
 		const { size, etype } = input.readListBegin();
 		for (let _i = 0; _i < size; ++_i) {
 			returnData.push(readValue(input, etype));
@@ -79,17 +84,20 @@ function readValue(
 		input.readListEnd();
 		return returnData;
 	} else if (ftype == Thrift.Type.MAP) {
-		const returnData: Record<PropertyKey, any> = {};
+		const returnData: Record<PropertyKey, unknown> = {};
 		const { size, ktype, vtype } = input.readMapBegin();
 		for (let _i = 0; _i < size; ++_i) {
 			const key = readValue(input, ktype);
 			const val = readValue(input, vtype);
-			returnData[key] = val;
+			// ToPropertyKey(key) === String(key) for every value the thrift
+			// reader can produce (string/number/bigint/bool/object), so this
+			// is exactly the old `returnData[key] = val` coercion.
+			returnData[String(key)] = val;
 		}
 		input.readMapEnd();
 		return returnData;
 	} else if (ftype == Thrift.Type.SET) {
-		const returnData: any[] = [];
+		const returnData: unknown[] = [];
 		const { size, etype } = input.readSetBegin();
 		for (let _i = 0; _i < size; ++_i) {
 			returnData.push(readValue(input, etype));
@@ -143,7 +151,7 @@ export function readThriftStruct(
 	data: Uint8Array | Buffer,
 	Protocol: typeof thrift.TCompactProtocol | typeof thrift.TBinaryProtocol =
 		thrift.TCompactProtocol,
-): any {
+): ThriftStructData {
 	const bufTrans = new thrift.TFramedTransport(
 		data instanceof Buffer ? data : Buffer.from(data),
 	);

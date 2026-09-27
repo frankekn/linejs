@@ -46,7 +46,7 @@ Deno.test("loginWithAuthToken accepts V3 credentials and uses encrypted LEGY", a
 		"stop before network",
 	);
 
-	assertEquals(seen?.url, "https://gf.line.naver.jp/enc");
+	assertEquals(seen?.url, "https://legy.line-apps.com/enc");
 	assertEquals(seen?.headers.get("x-line-access"), null);
 	assertEquals(seen?.headers.get("x-le"), "7");
 	assertEquals(seen?.headers.get("x-lap"), "5");

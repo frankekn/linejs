@@ -1,13 +1,12 @@
-import type * as LINETypes from "@evex/linejs-types";
+import type * as LINETypes from "@frankekn/linejs-types";
 import type { SyncData } from "../../polling/mod.ts";
-import type { LooseType } from "@evex/loose-types";
 // import type { Operation, SquareMessage, TalkMessage } from "../../event/mod.ts";
 // deno-lint-ignore ban-types
 type LogType = "login" | "request" | "response" | (string & {});
 
 export interface Log {
 	type: LogType;
-	data: LooseType;
+	data: unknown;
 }
 
 export type ClientEvents = {

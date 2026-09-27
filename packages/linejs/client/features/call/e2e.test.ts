@@ -11,7 +11,14 @@ import {
 	type CodecFactory,
 	type PcmFrame,
 } from "./audio.ts";
-import { deriveSrtpContext, SRTP_KEYING_LEN, srtpDecrypt, srtpEncrypt, buildRtp, parseRtp } from "./srtp.ts";
+import {
+	buildRtp,
+	deriveSrtpContext,
+	parseRtp,
+	SRTP_KEYING_LEN,
+	srtpDecrypt,
+	srtpEncrypt,
+} from "./srtp.ts";
 
 /** Identity codec — encodes a PCM frame to a binary packet that
  *  encloses the raw samples. */
@@ -22,7 +29,14 @@ function identityCodec(): CodecFactory {
 				encode(f: PcmFrame): Uint8Array {
 					const buf = new Uint8Array(4 + f.samples.byteLength);
 					new DataView(buf.buffer).setUint32(0, f.samples.length, false);
-					buf.set(new Uint8Array(f.samples.buffer, f.samples.byteOffset, f.samples.byteLength), 4);
+					buf.set(
+						new Uint8Array(
+							f.samples.buffer,
+							f.samples.byteOffset,
+							f.samples.byteLength,
+						),
+						4,
+					);
 					return buf;
 				},
 			};
@@ -30,7 +44,8 @@ function identityCodec(): CodecFactory {
 		newDecoder(): AudioDecoder {
 			return {
 				decode(p: Uint8Array): PcmFrame {
-					const n = new DataView(p.buffer, p.byteOffset, p.byteLength).getUint32(0, false);
+					const n = new DataView(p.buffer, p.byteOffset, p.byteLength)
+						.getUint32(0, false);
 					const samples = new Int16Array(n);
 					new Uint8Array(samples.buffer).set(p.subarray(4, 4 + n * 2));
 					return { samples, sampleRate: 16000, channels: 1 };
@@ -58,12 +73,14 @@ function loopbackTransport(): CallTransport {
 			sendCtx = await deriveSrtpContext(keying);
 			recvCtx = await deriveSrtpContext(keying);
 		},
-		close() { return Promise.resolve(); },
+		close() {
+			return Promise.resolve();
+		},
 		async send(opusPacket: Uint8Array) {
 			const rtp = buildRtp({
 				payloadType: 96,
 				seq: seq++,
-				timestamp: (timestamp += 320),
+				timestamp: timestamp += 320,
 				ssrc,
 				payload: opusPacket,
 			});

@@ -36,7 +36,12 @@ Deno.test("readRtpmap extracts payload-type → codec mapping", () => {
 	);
 	const map = readRtpmap(sdp.media[0]);
 	assertEquals(map[0], { pt: 96, name: "opus", rate: 48000, channels: 2 });
-	assertEquals(map[1], { pt: 0, name: "PCMU", rate: 8000, channels: undefined });
+	assertEquals(map[1], {
+		pt: 0,
+		name: "PCMU",
+		rate: 8000,
+		channels: undefined,
+	});
 });
 
 Deno.test("readCrypto pulls inline keys (RFC 4568)", () => {

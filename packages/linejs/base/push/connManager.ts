@@ -19,7 +19,7 @@ import type {
 	SquareService_fetchMyEvents_result,
 	sync_args,
 	sync_result,
-} from "@evex/linejs-types";
+} from "@frankekn/linejs-types";
 
 import type { ParsedThrift } from "../thrift/mod.ts";
 import { Buffer } from "node:buffer";
@@ -35,7 +35,7 @@ export interface ReadableStreamWriter<T> {
 	stream: ReadableStream<T>;
 	enqueue(chunk: T): void;
 	close(): void;
-	error(err: LooseType): void;
+	error(err: unknown): void;
 	renew(): void;
 }
 export class ConnManager {
@@ -65,7 +65,7 @@ export class ConnManager {
 		this.sqStream = this.createAsyncReadableStream<SquareEvent>();
 	}
 
-	log(text: string, data?: LooseType) {
+	log(text: string, data?: unknown) {
 		this.client.log("[LEGY/PUSH] " + text, data ?? "");
 	}
 
@@ -108,7 +108,7 @@ export class ConnManager {
 				controller = null;
 				this.renew();
 			},
-			error(err: LooseType) {
+			error(err: unknown) {
 				controller?.error(err);
 				controller = null;
 				this.renew();
@@ -173,7 +173,7 @@ export class ConnManager {
 		conn: Conn,
 		serviceType: number,
 		kwargs: Record<string, LooseType> = {},
-	): Promise<{ payload: Uint8Array<ArrayBuffer>; id: number; }> {
+	): Promise<{ payload: Uint8Array<ArrayBuffer>; id: number }> {
 		this.log("buildAndSendSignOnRequest", { serviceType, kwargs });
 		const cl = this.client;
 		const id = Object.keys(this.signOnRequests).length + 1;
@@ -297,7 +297,7 @@ export class ConnManager {
 				let detectedMethod = methodName;
 				try {
 					const proto = new TMoreCompactProtocol(Buffer.from(data));
-					parsed = <LooseType>{
+					parsed = <LooseType> {
 						data: proto.res,
 						_info: {
 							fname: detectedMethod,
@@ -440,10 +440,15 @@ export class ConnManager {
 	async _OnPushResponse(pushFrame: LegyH2PushFrame) {
 		this.log("_OnPushResponse", pushFrame);
 		if (pushFrame.serviceType === 3 && pushFrame.pushPayload) {
-			this.subscriptionId = this.client.thrift.readThriftStruct(
-				pushFrame.pushPayload,
-				TCompactProtocol,
-			)[1];
+			// Wire boundary: field 1 of the raw subscription struct keeps its
+			// LooseType (allowed inside base/push) so the value flows exactly
+			// as before, bigint included.
+			const wireSubscriptionId: LooseType = this.client.thrift
+				.readThriftStruct(
+					pushFrame.pushPayload,
+					TCompactProtocol,
+				)[1];
+			this.subscriptionId = wireSubscriptionId;
 			const res = await this.client.square.fetchMyEvents({
 				subscriptionId: this.subscriptionId,
 				syncToken: this.client.poll.sync.square,

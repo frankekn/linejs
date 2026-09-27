@@ -1,6 +1,6 @@
 {
-	"name": "@evex/linejs-types",
-	"version": "0.0.0",
+	"name": "@frankekn/linejs-types",
+	"version": "3.4.2-omarchy.5",
 	"license": "MIT",
 	"exports": {
 		".": "./line_types.ts",

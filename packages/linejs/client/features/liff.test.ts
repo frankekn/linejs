@@ -40,12 +40,18 @@ Deno.test("liff.image — preview defaults to original", () => {
 });
 
 Deno.test("liff.image — explicit preview", () => {
-	const m = image("https://example.test/orig.jpg", "https://example.test/thumb.jpg");
+	const m = image(
+		"https://example.test/orig.jpg",
+		"https://example.test/thumb.jpg",
+	);
 	assertEquals(m.previewImageUrl, "https://example.test/thumb.jpg");
 });
 
 Deno.test("liff.flex — passes contents through", () => {
-	const contents = { type: "bubble", body: { type: "box", layout: "vertical" } };
+	const contents = {
+		type: "bubble",
+		body: { type: "box", layout: "vertical" },
+	};
 	const m = flex("alt", contents);
 	assertEquals(m.type, "flex");
 	assertEquals(m.altText, "alt");

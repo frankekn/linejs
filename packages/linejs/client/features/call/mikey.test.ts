@@ -1,6 +1,11 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { Buffer } from "node:buffer";
-import { buildMikeyPke, mikeyFromBase64, mikeyToBase64, parseMikey } from "./mikey.ts";
+import {
+	buildMikeyPke,
+	mikeyFromBase64,
+	mikeyToBase64,
+	parseMikey,
+} from "./mikey.ts";
 
 async function fakeRsaKeypair() {
 	const k = await crypto.subtle.generateKey(
@@ -13,7 +18,9 @@ async function fakeRsaKeypair() {
 		true,
 		["encrypt", "decrypt"],
 	);
-	const spki = new Uint8Array(await crypto.subtle.exportKey("spki", k.publicKey));
+	const spki = new Uint8Array(
+		await crypto.subtle.exportKey("spki", k.publicKey),
+	);
 	return { pub: k.publicKey, priv: k.privateKey, spki };
 }
 

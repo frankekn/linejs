@@ -1,4 +1,4 @@
-import type * as line from "@evex/linejs-types";
+import type * as line from "@frankekn/linejs-types";
 import type { Client } from "../mod.ts";
 
 /**
@@ -40,7 +40,9 @@ function bool(v: boolean): string {
 	return v ? "true" : "false";
 }
 
-function buildAttrMap(update: MyProfileUpdate): Record<number, line.ProfileContent> {
+function buildAttrMap(
+	update: MyProfileUpdate,
+): Record<number, line.ProfileContent> {
 	const out: Record<number, line.ProfileContent> = {};
 	const put = (attr: number, value: string) => {
 		out[attr] = { value, meta: {} };
@@ -58,10 +60,16 @@ function buildAttrMap(update: MyProfileUpdate): Record<number, line.ProfileConte
 		put(ProfileAttribute.MUSIC_PROFILE, update.musicProfile);
 	}
 	if (update.allowSearchByUserid !== undefined) {
-		put(ProfileAttribute.ALLOW_SEARCH_BY_USERID, bool(update.allowSearchByUserid));
+		put(
+			ProfileAttribute.ALLOW_SEARCH_BY_USERID,
+			bool(update.allowSearchByUserid),
+		);
 	}
 	if (update.allowSearchByEmail !== undefined) {
-		put(ProfileAttribute.ALLOW_SEARCH_BY_EMAIL, bool(update.allowSearchByEmail));
+		put(
+			ProfileAttribute.ALLOW_SEARCH_BY_EMAIL,
+			bool(update.allowSearchByEmail),
+		);
 	}
 	if (update.hiddenFromList !== undefined) {
 		put(ProfileAttribute.HIDDEN_FROM_LIST, bool(update.hiddenFromList));

@@ -103,7 +103,8 @@ async function spawnMockUas(): Promise<{
 					To: `${sip.headers["To"]};tag=mock`,
 					"Call-ID": sip.headers["Call-ID"],
 					CSeq: sip.headers["CSeq"],
-					"WWW-Authenticate": `Digest realm="mock", nonce="n1", qop="auth", algorithm=MD5`,
+					"WWW-Authenticate":
+						`Digest realm="mock", nonce="n1", qop="auth", algorithm=MD5`,
 					"Content-Length": "0",
 				},
 				body: "",
@@ -130,7 +131,9 @@ async function spawnMockUas(): Promise<{
 			const remoteKey = new Uint8Array(30);
 			for (let i = 0; i < 30; i++) remoteKey[i] = (i + 99) & 0xff;
 			let b64 = "";
-			for (let i = 0; i < remoteKey.length; i++) b64 += String.fromCharCode(remoteKey[i]);
+			for (let i = 0; i < remoteKey.length; i++) {
+				b64 += String.fromCharCode(remoteKey[i]);
+			}
 			const keyB64 = btoa(b64);
 			const answer = [
 				"v=0",

@@ -32,7 +32,10 @@ export function parseDigestChallenge(value: string): Record<string, string> {
 	const m = value.match(/^Digest\s+(.+)$/i);
 	const body = m ? m[1] : value;
 	const out: Record<string, string> = {};
-	for (const pair of body.match(/(\w+)\s*=\s*"([^"]*)"|(\w+)\s*=\s*([^,\s]+)/g) ?? []) {
+	for (
+		const pair of body.match(/(\w+)\s*=\s*"([^"]*)"|(\w+)\s*=\s*([^,\s]+)/g) ??
+			[]
+	) {
 		const eq = pair.indexOf("=");
 		const k = pair.slice(0, eq).trim();
 		let v = pair.slice(eq + 1).trim();
@@ -66,7 +69,9 @@ export async function digestResponse(p: DigestParams): Promise<string> {
 	const ha2 = await md5Hex(`${p.method}:${p.uri}`);
 	const response = p.qop
 		? await md5Hex(
-			`${ha1}:${p.nonce}:${p.nc ?? "00000001"}:${p.cnonce ?? "0a4f113b"}:${p.qop}:${ha2}`,
+			`${ha1}:${p.nonce}:${p.nc ?? "00000001"}:${
+				p.cnonce ?? "0a4f113b"
+			}:${p.qop}:${ha2}`,
 		)
 		: await md5Hex(`${ha1}:${p.nonce}:${ha2}`);
 	const parts = [

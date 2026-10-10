@@ -440,34 +440,49 @@ export class ConnManager {
 	async _OnPushResponse(pushFrame: LegyH2PushFrame) {
 		this.log("_OnPushResponse", pushFrame);
 		if (pushFrame.serviceType === 3 && pushFrame.pushPayload) {
-			// Wire boundary: field 1 of the raw subscription struct keeps its
-			// LooseType (allowed inside base/push) so the value flows exactly
-			// as before, bigint included.
-			const wireSubscriptionId: LooseType = this.client.thrift
-				.readThriftStruct(
-					pushFrame.pushPayload,
-					TCompactProtocol,
-				)[1];
-			this.subscriptionId = wireSubscriptionId;
-			const res = await this.client.square.fetchMyEvents({
-				subscriptionId: this.subscriptionId,
-				syncToken: this.client.poll.sync.square,
-				limit: 100,
-			});
-			const { events, syncToken, subscription } = res;
+			try {
+				// Wire boundary: field 1 of the raw subscription struct keeps its
+				// LooseType (allowed inside base/push) so the value flows exactly
+				// as before, bigint included.
+				const wireSubscriptionId: LooseType = this.client.thrift
+					.readThriftStruct(
+						pushFrame.pushPayload,
+						TCompactProtocol,
+					)[1];
+				this.subscriptionId = wireSubscriptionId;
+				const res = await this.client.square.fetchMyEvents({
+					subscriptionId: this.subscriptionId,
+					syncToken: this.client.poll.sync.square,
+					limit: 100,
+				});
+				const { events, syncToken, subscription } = res;
 
-			for (const ev of events) {
-				this.sqStream.enqueue(ev);
+				for (const ev of events) {
+					this.sqStream.enqueue(ev);
+				}
+				this.client.poll.sync.square = syncToken;
+				this.client.emit("update:syncdata", this.client.poll.sync);
+
+				this.subscriptionId = Number(subscription.subscriptionId);
+
+				this.log("SQ_fetchMyEvents", {
+					syncToken,
+					subscriptionId: this.subscriptionId,
+				});
+			} catch (error) {
+				// Conn calls this handler without awaiting it, so a failed
+				// fetchMyEvents (e.g. a request timeout) used to surface as an
+				// unhandled rejection and take the host process down. Report it
+				// the way the pusher reports its other errors; the next push
+				// frame for service 3 retries the fetch.
+				try {
+					this.log("fetchMyEvents failed", { error });
+				} catch {
+					// `log` fans out to user-supplied listeners. Letting one
+					// throw here would reject this handler and put back the
+					// unhandled rejection.
+				}
 			}
-			this.client.poll.sync.square = syncToken;
-			this.client.emit("update:syncdata", this.client.poll.sync);
-
-			this.subscriptionId = Number(subscription.subscriptionId);
-
-			this.log("SQ_fetchMyEvents", {
-				syncToken,
-				subscriptionId: this.subscriptionId,
-			});
 		}
 	}
 
@@ -494,6 +509,18 @@ export class ConnManager {
 					this.log("renew push conn for new authToken...");
 					this.authToken = newToken;
 					this.conns[0].close();
+				}
+			}).catch((error) => {
+				// Nothing awaits this promise, so a timed-out noop used to
+				// surface as an unhandled rejection and take the host process
+				// down. Report it the way the pusher reports its other errors
+				// and keep the connection alive.
+				try {
+					this.log("noop failed", { error });
+				} catch {
+					// `log` fans out to user-supplied listeners. Letting one
+					// throw here would reject this handler and put back the
+					// unhandled rejection.
 				}
 			});
 		}

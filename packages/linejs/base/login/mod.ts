@@ -12,6 +12,40 @@ import {
 	parseAuthTokenInput,
 } from "../request/auth_token.ts";
 
+export class QrPollingExpiredError extends Error {
+	readonly code = "QR_POLLING_EXPIRED";
+
+	constructor(phase: "qr" | "pin", cause?: unknown) {
+		super(`${phase.toUpperCase()} verification polling expired`, { cause });
+		this.name = "QrPollingExpiredError";
+	}
+}
+
+function isQrPollingTimeout(error: unknown): boolean {
+	const parts: string[] = [];
+	let current: unknown = error;
+	for (let depth = 0; current && depth < 5; depth++) {
+		const value = current as {
+			name?: unknown;
+			message?: unknown;
+			data?: { code?: unknown };
+			cause?: unknown;
+		};
+		parts.push(
+			String(value.name ?? ""),
+			String(value.message ?? current),
+			String(value.data?.code ?? ""),
+		);
+		current = value.cause;
+	}
+	const text = parts.join(" ");
+	if (
+		/\b(ABUSE_BLOCK|BANNED|EXCESSIVE_ACCESS|RefreshError|MUST_REFRESH_V3_TOKEN|NOT_AUTHORIZED_DEVICE|AUTHENTICATION_FAILED|V3_TOKEN_CLIENT_LOGGED_OUT)\b/
+			.test(text)
+	) return false;
+	return /Timeout|timed out|status=(408|410)\b/i.test(text);
+}
+
 export type LoginOption = PasswordLoginOption | QrCodeLoginOption | {
 	authToken: AuthTokenInput;
 	email?: undefined;
@@ -288,10 +322,7 @@ export class Login {
 			}
 			return authToken;
 		}
-		throw new InternalError(
-			"TimeoutError",
-			"checkQrCodeVerified timed out",
-		);
+		throw new QrPollingExpiredError("qr");
 	}
 
 	public async requestSQR2(): Promise<string> {
@@ -368,10 +399,7 @@ export class Login {
 			);
 			return tokenInfo[1];
 		}
-		throw new InternalError(
-			"TimeoutError",
-			"checkQrCodeVerified timed out",
-		);
+		throw new QrPollingExpiredError("qr");
 	}
 
 	/**
@@ -785,19 +813,14 @@ export class Login {
 				);
 				return true;
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				// Long-polling: a timed-out poll just means "no user
-				// action yet", keep looping.  Anything else is fatal.
-				if (
-					/Timeout|timed out|status=408|status=410/i.test(msg) &&
-					i < maxCount - 1
-				) {
-					continue;
+				if (isQrPollingTimeout(error)) {
+					if (i < maxCount - 1) continue;
+					throw new QrPollingExpiredError("qr", error);
 				}
 				throw error;
 			}
 		}
-		return false;
+		throw new QrPollingExpiredError("qr");
 	}
 
 	public async verifyCertificate(
@@ -845,17 +868,14 @@ export class Login {
 				);
 				return true;
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
-				if (
-					/Timeout|timed out|status=408|status=410/i.test(msg) &&
-					i < maxCount - 1
-				) {
-					continue;
+				if (isQrPollingTimeout(error)) {
+					if (i < maxCount - 1) continue;
+					throw new QrPollingExpiredError("pin", error);
 				}
 				throw error;
 			}
 		}
-		return false;
+		throw new QrPollingExpiredError("pin");
 	}
 
 	public async qrCodeLogin(

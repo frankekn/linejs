@@ -4,7 +4,7 @@ import { Buffer } from "node:buffer";
 import type { LooseType } from "@evex/loose-types";
 
 export const genHeader = {
-	3: (name: string) => {
+	3: (name: string): Buffer => {
 		const nameBuf = Buffer.from(String(name), "utf8");
 		if (nameBuf.length > 0xff) {
 			throw new RangeError("genHeader v3: name too long");
@@ -22,7 +22,7 @@ export const genHeader = {
 		const suffix = Buffer.from([0x00, 0x00, 0x00, 0x00]);
 		return Buffer.concat([prefix, nameBuf, suffix]);
 	},
-	4: (name: string) => {
+	4: (name: string): Buffer => {
 		const nameBuf = Buffer.from(String(name), "utf8");
 		if (nameBuf.length > 0xff) {
 			throw new RangeError("genHeader v4: name too long (max 255 bytes)");

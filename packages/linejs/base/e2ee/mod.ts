@@ -80,6 +80,13 @@ function isLocationValue(value: unknown): value is Location {
  * HMAC covers the SHA-256 of each 128 KiB ciphertext chunk, concatenated,
  * not the ciphertext itself (verified against videos sent from the app).
  * Encryption and the key derivation are the same, so only the tag differs.
+ *
+ * decryptByKeyMaterial accepts either tag for any media; in practice only
+ * app-sent videos use this one. Accepting both is a deliberate trade-off:
+ * with no domain separation, one tag can verify two inputs (a valid
+ * `enc || tag` and `chunkDigests(enc) || tag`). Forging the second needs
+ * write access to the OBS object and only yields 32·n bytes of garbage,
+ * never chosen plaintext.
  */
 export const MEDIA_TAG_CHUNK = 128 * 1024;
 

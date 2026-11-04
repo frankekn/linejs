@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertRejects } from "@std/assert";
 import { Buffer } from "node:buffer";
-import { E2EE } from "./mod.ts";
+import crypto from "node:crypto";
+import { chunkDigests, E2EE, MEDIA_TAG_CHUNK } from "./mod.ts";
 import { InternalError } from "../core/utils/error.ts";
 
 // `encryptByKeyMaterial` appends an HMAC-SHA256 of the ciphertext, but
@@ -75,4 +76,41 @@ Deno.test("decryptByKeyMaterial rejects truncated input", async () => {
 		"too short",
 	);
 	assert(true);
+});
+
+// The LINE app's video tag: HMAC over the concatenated SHA-256 of each
+// 128 KiB ciphertext chunk. Re-tag a linejs ciphertext the way the app does.
+async function appTagged(e2ee: E2EE, raw: Buffer) {
+	const { keyMaterial, encryptedData } = await e2ee.encryptByKeyMaterial(raw);
+	const enc = encryptedData.subarray(0, -32);
+	const { macKey } = await e2ee.deriveKeyMaterial(
+		Buffer.from(keyMaterial, "base64"),
+	);
+	const tag = crypto.createHmac("sha256", macKey).update(chunkDigests(enc))
+		.digest();
+	return { keyMaterial, data: Buffer.concat([enc, tag]) };
+}
+
+Deno.test("decryptByKeyMaterial accepts the app's chunk-digest video tag", async () => {
+	const e2ee = makeE2EE();
+	// Two full chunks and a partial third, so chunking actually matters.
+	const raw = crypto.randomBytes(MEDIA_TAG_CHUNK * 2 + 4097);
+	const { keyMaterial, data } = await appTagged(e2ee, raw);
+	const decrypted = await e2ee.decryptByKeyMaterial(data, keyMaterial);
+	assert(decrypted.equals(raw));
+});
+
+Deno.test("decryptByKeyMaterial still rejects a tampered chunk-digest video", async () => {
+	const e2ee = makeE2EE();
+	const { keyMaterial, data } = await appTagged(
+		e2ee,
+		crypto.randomBytes(MEDIA_TAG_CHUNK + 10),
+	);
+	const tampered = Buffer.from(data);
+	tampered[MEDIA_TAG_CHUNK + 3] ^= 0x01; // inside the second chunk
+	await assertRejects(
+		() => e2ee.decryptByKeyMaterial(tampered, keyMaterial),
+		InternalError as never,
+		"HMAC verification failed",
+	);
 });

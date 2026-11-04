@@ -75,6 +75,26 @@ function isLocationValue(value: unknown): value is Location {
 	return typeof value === "object" && value !== null;
 }
 
+/**
+ * The LINE app tags E2EE videos differently from other media: the trailing
+ * HMAC covers the SHA-256 of each 128 KiB ciphertext chunk, concatenated,
+ * not the ciphertext itself (verified against videos sent from the app).
+ * Encryption and the key derivation are the same, so only the tag differs.
+ */
+export const MEDIA_TAG_CHUNK = 128 * 1024;
+
+export function chunkDigests(encData: Buffer): Buffer {
+	const digests: Buffer[] = [];
+	for (let at = 0; at < encData.length; at += MEDIA_TAG_CHUNK) {
+		digests.push(
+			crypto.createHash("sha256")
+				.update(encData.subarray(at, at + MEDIA_TAG_CHUNK))
+				.digest(),
+		);
+	}
+	return Buffer.concat(digests);
+}
+
 export class E2EE {
 	readonly client: BaseClient;
 	private loginKey?: { keyId: number | string; privKey: Buffer };
@@ -1665,7 +1685,11 @@ export class E2EE {
 		const sign = rawData.subarray(-32);
 		const expected = this.signData(encData, keys.macKey);
 		if (
-			!crypto.timingSafeEqual(sign, expected)
+			!crypto.timingSafeEqual(sign, expected) &&
+			!crypto.timingSafeEqual(
+				sign,
+				this.signData(chunkDigests(encData), keys.macKey),
+			)
 		) {
 			throw new InternalError(
 				"E2EEMediaError",

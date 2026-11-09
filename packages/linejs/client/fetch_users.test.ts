@@ -82,14 +82,14 @@ Deno.test("fetchUsers — non-capability errors are rethrown", async () => {
 
 for (const count of [100, 101, 250]) {
 	for (const version of ["v3", "v2"] as const) {
-		test(`fetchUsers — ${version} batches ${count} friends`, async () => {
+		Deno.test(`fetchUsers — ${version} batches ${count} friends`, async () => {
 			const friendMids = Array.from({ length: count }, (_, i) => `u-${i}`);
 			const requests: string[][] = [];
 			const client = buildClient({
 				friendMids,
 				[version]: ({ mids }: { mids: string[] }) => {
 					requests.push(mids);
-					assert.isAtMost(mids.length, 100);
+					assert(mids.length <= 100);
 					return version === "v3"
 						? { responses: mids.map((mid) => ({ targetUserMid: mid })) }
 						: { contacts: Object.fromEntries(mids.map((mid) => [mid, {}])) };
@@ -97,12 +97,12 @@ for (const count of [100, 101, 250]) {
 			});
 
 			const users = await client.fetchUsers();
-			assert.deepEqual(
+			assertEquals(
 				requests.map((mids) => mids.length),
 				count === 100 ? [100] : count === 101 ? [100, 1] : [100, 100, 50],
 			);
-			assert.deepEqual(requests.flat(), friendMids);
-			assert.deepEqual(
+			assertEquals(requests.flat(), friendMids);
+			assertEquals(
 				users.map((user) => user.mid),
 				friendMids,
 			);
@@ -110,7 +110,7 @@ for (const count of [100, 101, 250]) {
 	}
 }
 
-test("fetchUsers — V2 capability failure falls back to per-user getUser", async () => {
+Deno.test("fetchUsers — V2 capability failure falls back to per-user getUser", async () => {
 	const friendMids = Array.from({ length: 101 }, (_, i) => `u-${i}`);
 	const client = buildClient({ friendMids });
 	const requests: string[] = [];
@@ -121,8 +121,8 @@ test("fetchUsers — V2 capability failure falls back to per-user getUser", asyn
 	};
 
 	const users = await client.fetchUsers();
-	assert.deepEqual(requests, friendMids);
-	assert.deepEqual(
+	assertEquals(requests, friendMids);
+	assertEquals(
 		users.map((user) => user.mid),
 		friendMids.slice(1),
 	);

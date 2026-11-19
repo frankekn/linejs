@@ -1,4 +1,4 @@
-import { assert, assertEquals } from "@std/assert";
+import { assert, assertEquals, assertRejects } from "@std/assert";
 import { Buffer } from "node:buffer";
 import { TalkMessage } from "../../client/features/message/talk.ts";
 import { LineObs } from "./mod.ts";
@@ -326,4 +326,61 @@ Deno.test("uploadMediaByE2EE — video duration preserves encrypted preview and 
 	assertEquals(message.to, "c-group");
 	assertEquals(message.contentType, 2);
 	assertEquals(message.chunks, [new Uint8Array()]);
+});
+
+Deno.test("uploadObjectForService — single-slash URL and non-2xx throws ObsError", async () => {
+	const urls: string[] = [];
+	let status = 201;
+	const obs = new LineObs({
+		log() {},
+		request: { getHeader: () => ({}) },
+		fetch(url: string) {
+			urls.push(url);
+			return Promise.resolve(
+				new Response(null, {
+					status,
+					headers: status === 201 ? { "x-obs-oid": "oid-ok" } : {},
+				}),
+			);
+		},
+	} as never);
+
+	const ok = await obs.uploadObjectForService({
+		data: new Blob([new Uint8Array([1, 2, 3])]),
+		obsPath: "talk/emi/reqid-1",
+	});
+	assertEquals(urls[0], "https://obs.line-apps.com/r/talk/emi/reqid-1");
+	assertEquals(ok.objId, "oid-ok");
+
+	status = 403;
+	await assertRejects(
+		() =>
+			obs.uploadObjectForService({
+				data: new Blob([new Uint8Array([1, 2, 3])]),
+				obsPath: "talk/emi/reqid-2",
+			}),
+		Error,
+		"Object upload failed: HTTP 403",
+	);
+});
+
+Deno.test("uploadMediaByE2EE — empty objId throws ObsError instead of calling sendMessage", async () => {
+	const { obs, fake } = makeObs();
+	obs.uploadObjectForService = (() =>
+		Promise.resolve({
+			objId: "",
+			objHash: "",
+			headers: new Headers(),
+		})) as never;
+	await assertRejects(
+		() =>
+			obs.uploadMediaByE2EE({
+				data: new Blob([new Uint8Array(16)]),
+				oType: "image",
+				to: "u-recipient",
+			}),
+		Error,
+		"Object upload returned no objId",
+	);
+	assertEquals(fake.sendMessageCalls.length, 0);
 });

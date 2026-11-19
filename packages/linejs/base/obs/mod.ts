@@ -63,6 +63,7 @@ export class LineObs {
 	 */
 	#ensureOk(response: Response, what: string): Response {
 		if (!response.ok) {
+			void response.body?.cancel().catch(() => {});
 			throw new InternalError(
 				"ObsError",
 				`${what}: HTTP ${response.status}`,
@@ -265,7 +266,7 @@ export class LineObs {
 			obsPath: "myhome/h",
 			...options,
 		};
-		const obsPathFinal = `/r/${obsPath}`;
+		const obsPathFinal = `r/${obsPath}`;
 		oType = oType.toLowerCase();
 
 		filename = filename || crypto.randomUUID();
@@ -295,9 +296,11 @@ export class LineObs {
 			this.prefix + obsPathFinal,
 			{ method: "POST", headers, body: data },
 		);
+		this.#ensureOk(response, "Object upload failed");
 
 		const objId = response.headers.get("x-obs-oid") ?? "";
 		const objHash = response.headers.get("x-obs-hash") ?? "";
+		await response.body?.cancel().catch(() => {});
 		this.client.log("Obs.uploadObjectForServiceResponse", {
 			objId,
 			objHash,
@@ -399,6 +402,12 @@ export class LineObs {
 			obsPath: `${serviceName}/${obsNamespace}/${tempId}`,
 			params,
 		});
+		if (!objId) {
+			throw new InternalError(
+				"ObsError",
+				"Object upload returned no objId",
+			);
+		}
 		if (oType === "image" || oType === "gif" || oType === "video") {
 			let previewEdata: Blob;
 			if (preview) {
